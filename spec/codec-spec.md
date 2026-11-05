@@ -96,11 +96,17 @@ therefore separate what must be identical from what only has to be close:
 | What | Requirement | Applies to |
 |---|---|---|
 | Decoded integers of a reference bitstream (scalefactors, quantized coefficients) | Bit-exact | All platforms |
-| PCM output of the decoder for a reference bitstream | Within a tolerance, assumed +/-1 LSB until measured | All platforms |
+| PCM output of the decoder for a reference bitstream | Within +/-1 LSB | All platforms |
 | Bitstream produced by the encoder | Identical across repeated runs | Same platform and build only |
 
 Reference bitstreams are created once and checked in under `tests/conformance`, and every platform
 decodes the same files. The CI log of each platform reports the deviation that really occurs.
+
+**Measured on 2026-11-05**, with two reference bitstreams of 0.25 seconds each: GCC 13 and Clang 18 on
+Linux x86-64, MSVC 19.51 on Windows x86-64 and AppleClang 17 on macOS ARM all decode them with a
+deviation of 0 LSB, and their encoders produce bitstreams identical to the reference. The tolerance
+stays at +/-1 LSB and the encoder requirement stays as above, because this is a small sample and the
+psychoacoustic model of phase 3 will add more floating-point decisions to the encoder.
 
 Build rules: no `-ffast-math`, `-ffp-contract=off` on GCC and Clang, `/fp:precise` on MSVC.
 `tests/test_floating_point.cpp` guards the rule against fused multiply-add.
@@ -168,5 +174,4 @@ worse, because SNR does not reflect perception.
 - [ ] Coded bandwidth per bitrate: 32 kbit/s is only 0.67 bit per sample, so it may not be able to
       cover the full 24 kHz (phase 3)
 - [ ] Entropy coder for phase 3: Huffman or adaptive range coder, decided from measurements
-- [ ] Tolerance for the PCM comparison, confirmed by measurement on all platforms (phase 2)
 - [ ] Bit reservoir as an optional extension, if strict budgets audibly hurt transients

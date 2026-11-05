@@ -8,7 +8,9 @@ learning project about the principles of perceptual coding, not a competitor to 
 
 **Status: work in progress.** The encoder and decoder work end to end, from WAV to bitstream and
 back, but still without a psychoacoustic model: the quantization noise is flat, so the codec is not
-yet perceptual. There are no listening results to show.
+yet perceptual. There are no listening results to show. Reference bitstreams already decode to
+identical PCM on Linux, Windows and macOS, on x86-64 and ARM (see
+[tests/conformance](tests/conformance/README.md)).
 
 | Phase | Content | Status |
 |---|---|---|
