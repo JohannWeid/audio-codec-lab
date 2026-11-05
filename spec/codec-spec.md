@@ -99,7 +99,8 @@ therefore separate what must be identical from what only has to be close:
 | PCM output of the decoder for a reference bitstream | Within a tolerance, assumed +/-1 LSB until measured | All platforms |
 | Bitstream produced by the encoder | Identical across repeated runs | Same platform and build only |
 
-Reference bitstreams are created once and checked in, and every platform decodes the same files.
+Reference bitstreams are created once and checked in under `tests/conformance`, and every platform
+decodes the same files. The CI log of each platform reports the deviation that really occurs.
 
 Build rules: no `-ffast-math`, `-ffp-contract=off` on GCC and Clang, `/fp:precise` on MSVC.
 `tests/test_floating_point.cpp` guards the rule against fused multiply-add.

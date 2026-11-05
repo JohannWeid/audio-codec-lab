@@ -16,13 +16,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: Linux GCC, os: ubuntu-latest, cc: gcc, cxx: g++ }
-          - { name: Linux Clang, os: ubuntu-latest, cc: clang, cxx: clang++ }
-          - { name: Windows MSVC, os: windows-latest }
+          - { name: Linux GCC, os: ubuntu-latest, cc: gcc, cxx: g++, tools: build/ci }
+          - { name: Linux Clang, os: ubuntu-latest, cc: clang, cxx: clang++, tools: build/ci }
+          - { name: Windows MSVC, os: windows-latest, tools: build/ci/Release }
           # macos-15 runs on ARM, where compilers may fuse a * b + c. The other jobs run on x86-64,
           # so this one is the real check of the floating-point rules. Pinned because macos-latest
           # often got no runner in November 2026; try it again when updating the macOS version.
-          - { name: macOS Clang, os: macos-15 }
+          - { name: macOS Clang, os: macos-15, tools: build/ci }
     env:
       CC: ${{ matrix.cc }}
       CXX: ${{ matrix.cxx }}
@@ -34,6 +34,17 @@ jobs:
         run: cmake --build --preset ci --parallel
       - name: Test
         run: ctest --preset ci
+      # Repeated with verbose output, because this log is the measurement of how far each platform
+      # is from the reference bitstreams.
+      - name: Show deviation from the reference bitstreams
+        run: ctest --preset ci -R Conformance --verbose
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install Robot Framework
+        run: python -m pip install -r tests/e2e/requirements.txt
+      - name: End-to-end tests
+        run: python -m robot --variable TOOLS_DIR:${{ matrix.tools }} --outputdir build/robot tests/e2e
 
   sanitizers:
     name: Linux ASan and UBSan
@@ -47,6 +58,14 @@ jobs:
         run: cmake --build --preset sanitize --parallel
       - name: Test
         run: ctest --preset sanitize
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install Robot Framework
+        run: python -m pip install -r tests/e2e/requirements.txt
+      # The tools built with sanitizers, so that their whole path is checked and not only the library.
+      - name: End-to-end tests
+        run: python -m robot --variable TOOLS_DIR:build/sanitize --outputdir build/robot tests/e2e
 
   format:
     name: clang-format

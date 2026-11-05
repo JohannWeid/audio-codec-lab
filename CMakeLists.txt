@@ -77,6 +77,7 @@ include(GoogleTest)
 add_executable(codec_tests
   tests/test_bitstream.cpp
   tests/test_codec.cpp
+  tests/test_conformance.cpp
   tests/test_entropy.cpp
   tests/test_fft.cpp
   tests/test_floating_point.cpp
@@ -89,4 +90,6 @@ add_executable(codec_tests
   tests/test_wav.cpp
 )
 target_link_libraries(codec_tests PRIVATE codec codec_options GTest::gtest_main)
+target_compile_definitions(codec_tests PRIVATE
+  CODEC_CONFORMANCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/conformance")
 gtest_discover_tests(codec_tests)

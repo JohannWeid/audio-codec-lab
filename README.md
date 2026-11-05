@@ -15,7 +15,7 @@ yet perceptual. There are no listening results to show.
 | 1 | Specification | in progress |
 | 2 | Core: WAV, MDCT, quantization, bitstream, encoder and decoder without psychoacoustics | done, with Rice codes as a placeholder |
 | 3 | Psychoacoustic model, bit allocation with rate loop, better entropy coding | planned |
-| 4 | Test levels: unit, roundtrip, regression, end-to-end, fuzzing | CI skeleton only |
+| 4 | Test levels: unit, roundtrip, conformance, end-to-end, damaged input | done for the current code, grows with phase 3 |
 | 5 | Evaluation: objective metrics and a MUSHRA-style listening test | planned |
 
 ## Method (planned)
@@ -69,7 +69,8 @@ spec/               Codec and bitstream specification
 src/codec/          Codec library
 src/tools/          Command-line tools codec-encode and codec-decode
 tests/              Unit tests with GoogleTest
-tests/e2e/          End-to-end tests with Robot Framework (planned)
+tests/conformance/  Reference bitstreams that every platform must decode to the same result
+tests/e2e/          End-to-end tests of the tools with Robot Framework
 eval/               Metrics, plots and listening-test analysis in Python (planned)
 listening-test/     Listening-test setup, without licensed audio files
 .github/workflows/  CI: build matrix, sanitizers, formatting
