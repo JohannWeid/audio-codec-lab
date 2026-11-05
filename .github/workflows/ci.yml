@@ -19,9 +19,10 @@ jobs:
           - { name: Linux GCC, os: ubuntu-latest, cc: gcc, cxx: g++ }
           - { name: Linux Clang, os: ubuntu-latest, cc: clang, cxx: clang++ }
           - { name: Windows MSVC, os: windows-latest }
-          # macos-latest runs on ARM, where compilers may fuse a * b + c. The other jobs run on
-          # x86-64, so this one is the real check of the floating-point rules.
-          - { name: macOS Clang, os: macos-latest }
+          # macos-15 runs on ARM, where compilers may fuse a * b + c. The other jobs run on x86-64,
+          # so this one is the real check of the floating-point rules. Pinned because macos-latest
+          # often got no runner in November 2026; try it again when updating the macOS version.
+          - { name: macOS Clang, os: macos-15 }
     env:
       CC: ${{ matrix.cc }}
       CXX: ${{ matrix.cxx }}
