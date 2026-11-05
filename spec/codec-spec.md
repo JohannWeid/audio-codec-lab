@@ -55,6 +55,12 @@ Header:
 Each frame starts with its payload length in bytes, followed by the payload. The payload layout
 depends on the entropy coder and is defined in phase 2, which uses Rice codes.
 
+**Rice code with parameter k:** the quotient `value >> k` in unary as ones with a closing zero, then
+the k lowest bits. Quotients of 24 or more are written as 24 ones without a closing zero, followed
+by an Exponential-Golomb code of order 0 for `quotient - 24`, and then the k lowest bits. One value
+far above the others in its band therefore cannot produce an extremely long code. Signed values go
+through a zigzag mapping first: 0, -1, 1, -2, 2 become 0, 1, 2, 3, 4.
+
 **Alignment:** the decoder drops the first M output samples and writes exactly `total samples`
 samples, so that its output lines up with the input sample by sample. SNR, ViSQOL and the listening
 test all depend on this.
@@ -98,6 +104,11 @@ calibrated against each other, for example with a full-scale sine.
 - Inner loop: adjust the global step size until the frame fits the bit budget.
 
 Allocation sits behind one interface, so that it can be replaced as a whole.
+
+**Quantization:** the step of a band is `2^((gain - scalefactor - 144) / 8)`, with a gain from 0 to
+255 and a scalefactor from -128 to 127. One unit changes the step by 0.75 dB. A coefficient becomes
+`value / step`, rounded to the nearest integer with ties away from zero. The decoder multiplies by
+the step again. The steps come from a table of constants, so they are bit-exact on every platform.
 
 **Scalefactor bands:** 25 bands, one per Bark. The Bark value of each coefficient is taken at its
 center frequency with `z(f) = 13 * atan(0.00076 * f) + 3.5 * atan((f / 7500)^2)`, and a band has at

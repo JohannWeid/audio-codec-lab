@@ -7,8 +7,9 @@ coding, tested on Windows, Linux and macOS and evaluated with a MUSHRA-style lis
 learning project about the principles of perceptual coding, not a competitor to AAC or Opus.
 
 **Status: work in progress.** This repository currently holds the project skeleton (build system,
-CI, floating-point rules, draft specification), WAV input and output, and the MDCT with framing.
-Quantization and the bitstream do not exist yet, so there are no results to show.
+CI, floating-point rules, draft specification), WAV input and output, the MDCT with framing, and
+the building blocks for quantization and entropy coding. They are not yet joined into an encoder and
+decoder, so there are no results to show.
 
 | Phase | Content | Status |
 |---|---|---|
