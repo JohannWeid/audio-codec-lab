@@ -47,6 +47,7 @@ add_library(codec
   src/codec/framing.cpp
   src/codec/mdct.cpp
   src/codec/pcm.cpp
+  src/codec/psychoacoustics.cpp
   src/codec/quantizer.cpp
   src/codec/version.cpp
   src/codec/wav.cpp
@@ -85,6 +86,7 @@ add_executable(codec_tests
   tests/test_framing.cpp
   tests/test_mdct.cpp
   tests/test_pcm.cpp
+  tests/test_psychoacoustics.cpp
   tests/test_quantizer.cpp
   tests/test_version.cpp
   tests/test_wav.cpp

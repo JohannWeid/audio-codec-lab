@@ -113,16 +113,39 @@ Build rules: no `-ffast-math`, `-ffp-contract=off` on GCC and Clang, `/fp:precis
 
 ## 5. Psychoacoustic model
 
-Simplified model per block: FFT with a Hann window, energy per Bark band, spreading function,
-absolute threshold of hearing as a lower limit, and from these the masking threshold and the
-signal-to-mask ratio per scalefactor band.
+The model is simplified. For each frame, it works on the same 2048 samples as the MDCT, so both are
+aligned in time:
 
-The absolute threshold is given in dB SPL, but a digital signal has no absolute level, so the model
-needs an assumption: a full-scale sine corresponds to 96 dB SPL.
+1. **Spectrum:** an FFT with a Hann window. Its bin k stands for MDCT coefficient k.
+2. **Energy scale:** the power of each bin is multiplied by `8 / (3 * 2048)`. This puts it on the
+   scale of the orthonormal MDCT, so a threshold can be compared directly with the noise measured on
+   the coefficients. A test checks that both agree within 1 dB per band.
+3. **Band energy:** the sum over the bins of each scalefactor band.
+4. **Tonality per band:** the share of the band energy in tonal peaks, including the bin on each side
+   of a peak. A bin is a tonal peak if it is a local maximum and at least 7 dB above the bins around
+   it. These bins start at a distance of 2 and go up to 2, 6, 12 or 24 bins, with the limit growing
+   at bins 126, 254 and 510. This follows the MPEG-1 model, with its ranges doubled for this block
+   length.
+5. **Masking threshold:** each band acts as a masker for all bands:
 
-The FFT window must be aligned in time with the MDCT window of the same frame. The threshold comes
-from the FFT and the noise is measured on MDCT coefficients, so the two energy scales must be
-calibrated against each other, for example with a full-scale sine.
+   ```text
+   threshold[b] = sum_j energy[j] * spread(z[b] - z[j]) * 10^(-offset[j] / 10)
+   offset[j]    = tonality[j] * (14.5 + z[j]) + (1 - tonality[j]) * 5.5     (in dB, after Johnston)
+   spread(x)    = 15.81 + 7.5 * (x + 0.474) - 17.5 * sqrt(1 + (x + 0.474)^2) (in dB, after Schroeder)
+   ```
+
+   `z` is the Bark value of the band center. For each masked band, the values of `spread` are
+   normalized to a sum of 1, so that spreading does not raise a signal with equal energy in all
+   bands. This lowers the threshold next to a single masker by a few dB, which errs on the side of
+   less noise.
+6. **Threshold in quiet:** no threshold falls below the absolute threshold of hearing, after Terhardt,
+   at the most sensitive frequency of the band. It is given in dB SPL, but a digital signal has no
+   absolute level, so the model needs an assumption: a full-scale sine corresponds to 96 dB SPL, which
+   has an energy of 512 per frame in the MDCT.
+
+The signal-to-mask ratio of a band is `energy[b] / threshold[b]`. Neither pre-masking nor post-masking
+is modeled, and each frame is analyzed on its own. The real level of playback is unknown as well, so
+the threshold in quiet is only an estimate.
 
 ## 6. Bit allocation
 

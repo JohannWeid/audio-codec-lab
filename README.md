@@ -16,7 +16,7 @@ identical PCM on Linux, Windows and macOS, on x86-64 and ARM (see
 |---|---|---|
 | 1 | Specification | in progress |
 | 2 | Core: WAV, MDCT, quantization, bitstream, encoder and decoder without psychoacoustics | done, with Rice codes as a placeholder |
-| 3 | Psychoacoustic model, bit allocation with rate loop, better entropy coding | planned |
+| 3 | Psychoacoustic model, bit allocation with rate loop, better entropy coding | in progress: model written, not yet used by the encoder |
 | 4 | Test levels: unit, roundtrip, conformance, end-to-end, damaged input | done for the current code, grows with phase 3 |
 | 5 | Evaluation: objective metrics and a MUSHRA-style listening test | planned |
 
