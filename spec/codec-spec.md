@@ -1,24 +1,43 @@
 # Codec Specification (draft)
 
-This draft is not final. Values marked **proposal** still need a decision, and section 8 lists the
-open questions.
+This draft records the decisions made so far. Section 8 lists what is still open, and values may
+change once measurements exist.
 
 ## 1. Scope
 
 - Input and output: WAV, 16-bit PCM, 48 kHz, mono. Other formats are rejected with an error.
 - Stereo is out of scope until the mono codec is finished.
-- Target bitrates: **proposal** 32, 48 and 64 kbit/s, constant bitrate with a small tolerance.
+- Target bitrates: 32, 48 and 64 kbit/s, provisional until a short listening check. Constant bitrate
+  with a small tolerance.
+- Sample type in the signal path: `double`, through one alias (`Sample`), so that it can be changed
+  in one place.
 
 ## 2. Transform
 
-- MDCT with 1024 new samples per frame, so a window of 2048 samples with 50 % overlap.
-- Sine window first. A KBD window is an optional extension.
-- The window must satisfy `w[n]^2 + w[n + 1024]^2 = 1`, which a unit test checks.
+MDCT with M = 1024 new samples per frame, so a window of 2M = 2048 samples with 50 % overlap. The
+window is a sine window; a KBD window is an optional extension.
+
+```text
+w[n] = sin(pi * (n + 1/2) / (2M))
+
+X[k] = sqrt(2/M) * sum_{n=0}^{2M-1} w[n] * x[n] * cos(pi/M * (n + 1/2 + M/2) * (k + 1/2))
+y[n] = sqrt(2/M) * w[n] * sum_{k=0}^{M-1} X[k] * cos(pi/M * (n + 1/2 + M/2) * (k + 1/2))
+```
+
+Overlap-adding `y` of consecutive frames reconstructs the signal. Unit tests check this and the
+window condition `w[n]^2 + w[n + M]^2 = 1`.
+
+The factor `sqrt(2/M)` in both directions makes the transform orthonormal: the energy of the signal
+and of the quantization noise is the same in the time domain and in the coefficients. The rate loop
+can therefore measure the noise per band directly on the coefficients, without an inverse transform.
+
+**Framing:** for a signal of L samples, the encoder prepends M zeros and pads the end with zeros,
+which gives `ceil(L / M) + 1` frames. Frame `i` covers the samples `i * M` to `i * M + 2M - 1` of the
+padded signal.
 
 ## 3. Bitstream
 
-All multi-byte fields are big-endian (**proposal**), and bits are packed starting with the most
-significant bit.
+All multi-byte fields are big-endian, and bits are packed starting with the most significant bit.
 
 Header:
 
@@ -32,11 +51,11 @@ Header:
 | total samples | 8 bytes | Length of the original signal in samples |
 
 Each frame starts with its payload length in bytes, followed by the payload. The payload layout
-depends on the entropy coder and is defined in phase 2.
+depends on the entropy coder and is defined in phase 2, which uses Rice codes.
 
-**Alignment:** the decoder removes the encoder delay and writes exactly `total samples` samples, so
-that its output lines up with the input sample by sample. SNR, ViSQOL and the listening test all
-depend on this.
+**Alignment:** the decoder drops the first M output samples and writes exactly `total samples`
+samples, so that its output lines up with the input sample by sample. SNR, ViSQOL and the listening
+test all depend on this.
 
 **Damaged input:** the decoder must never crash or read out of bounds. It rejects a bitstream with a
 wrong magic, an unknown version, an impossible field or a length beyond the end of the data.
@@ -50,7 +69,7 @@ therefore separate what must be identical from what only has to be close:
 | What | Requirement | Applies to |
 |---|---|---|
 | Decoded integers of a reference bitstream (scalefactors, quantized coefficients) | Bit-exact | All platforms |
-| PCM output of the decoder for a reference bitstream | Within a tolerance, **proposal** +/-1 LSB | All platforms |
+| PCM output of the decoder for a reference bitstream | Within a tolerance, assumed +/-1 LSB until measured | All platforms |
 | Bitstream produced by the encoder | Identical across repeated runs | Same platform and build only |
 
 Reference bitstreams are created once and checked in, and every platform decodes the same files.
@@ -65,9 +84,11 @@ absolute threshold of hearing as a lower limit, and from these the masking thres
 signal-to-mask ratio per scalefactor band.
 
 The absolute threshold is given in dB SPL, but a digital signal has no absolute level, so the model
-needs an assumption. **Proposal:** a full-scale sine corresponds to 96 dB SPL.
+needs an assumption: a full-scale sine corresponds to 96 dB SPL.
 
-The FFT window must be aligned in time with the MDCT window of the same frame.
+The FFT window must be aligned in time with the MDCT window of the same frame. The threshold comes
+from the FFT and the noise is measured on MDCT coefficients, so the two energy scales must be
+calibrated against each other, for example with a full-scale sine.
 
 ## 6. Bit allocation
 
@@ -76,19 +97,39 @@ The FFT window must be aligned in time with the MDCT window of the same frame.
 
 Allocation sits behind one interface, so that it can be replaced as a whole.
 
+**Scalefactor bands:** 25 bands, one per Bark. The Bark value of each coefficient is taken at its
+center frequency with `z(f) = 13 * atan(0.00076 * f) + 3.5 * atan((f / 7500)^2)`, and a band has at
+least 4 coefficients. At 48 kHz with M = 1024, one coefficient covers 23.4375 Hz. The band edges,
+where band `b` covers the coefficients from `edge[b]` up to but not including `edge[b + 1]`, are:
+
+```text
+0, 4, 9, 13, 18, 23, 28, 33, 39, 46, 54, 62, 72, 84, 98, 116, 137, 163, 194, 231, 274, 325, 391,
+487, 658, 1024
+```
+
+**Bit budget:** each frame has a strict budget, without a bit reservoir for now. The average budget
+is often not a whole number, so frame `n` gets the following number of bits, computed with 64-bit
+integers, where R is the bitrate and fs the sample rate:
+
+```text
+budget(n) = floor((n + 1) * R * M / fs) - floor(n * R * M / fs)
+```
+
+At 32 kbit/s this gives 682, 683, 683 and then repeats; at 48 kbit/s every frame gets 1024 bits. The
+budget covers the whole frame including its length field. The file header is not counted.
+
 ## 7. Baseline
 
-`--psy off` (**proposal**) selects flat noise allocation instead of the masking model. Everything
-else stays the same: transform, entropy coder and rate loop. The comparison then measures only the
-psychoacoustic model. The baseline is expected to reach a similar or better SNR at the same bitrate
-and to sound worse, because SNR does not reflect perception.
+`--psy off` selects flat noise allocation instead of the masking model. Everything else stays the
+same: transform, entropy coder and rate loop. The comparison then measures only the psychoacoustic
+model. The baseline is expected to reach a similar or better SNR at the same bitrate and to sound
+worse, because SNR does not reflect perception.
 
 ## 8. Open questions
 
-- [ ] MDCT scaling convention, and where the normalization sits (forward or inverse)
-- [ ] Sample type in the signal path: `float` or `double`
-- [ ] Target bitrates: at which bitrates are differences audible, without everything being equally bad?
-- [ ] Scalefactor band table for 1024 coefficients at 48 kHz
-- [ ] Bit budget per frame: strict, or with a bit reservoir
-- [ ] Entropy coder for phase 3: Huffman or adaptive range coder
-- [ ] Tolerance for the PCM comparison, confirmed by measurement on all platforms
+- [ ] Final target bitrates, after a short listening check (phase 3)
+- [ ] Coded bandwidth per bitrate: 32 kbit/s is only 0.67 bit per sample, so it may not be able to
+      cover the full 24 kHz (phase 3)
+- [ ] Entropy coder for phase 3: Huffman or adaptive range coder, decided from measurements
+- [ ] Tolerance for the PCM comparison, confirmed by measurement on all platforms (phase 2)
+- [ ] Bit reservoir as an optional extension, if strict budgets audibly hurt transients
