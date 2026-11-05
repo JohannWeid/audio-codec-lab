@@ -38,7 +38,10 @@ else()
     $<$<BOOL:${CODEC_WERROR}>:-Werror>)
 endif()
 
-add_library(codec src/codec/version.cpp)
+add_library(codec
+  src/codec/version.cpp
+  src/codec/wav.cpp
+)
 target_include_directories(codec PUBLIC src)
 target_link_libraries(codec PRIVATE codec_options)
 target_compile_definitions(codec PRIVATE CODEC_VERSION="${PROJECT_VERSION}")
@@ -65,6 +68,7 @@ include(GoogleTest)
 add_executable(codec_tests
   tests/test_floating_point.cpp
   tests/test_version.cpp
+  tests/test_wav.cpp
 )
 target_link_libraries(codec_tests PRIVATE codec codec_options GTest::gtest_main)
 gtest_discover_tests(codec_tests)
