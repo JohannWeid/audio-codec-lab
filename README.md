@@ -7,13 +7,13 @@ coding, tested on Windows, Linux and macOS and evaluated with a MUSHRA-style lis
 learning project about the principles of perceptual coding, not a competitor to AAC or Opus.
 
 **Status: work in progress.** This repository currently holds the project skeleton (build system,
-CI, floating-point rules, draft specification) and WAV input and output. The codec itself does not
-exist yet, so there are no results to show.
+CI, floating-point rules, draft specification), WAV input and output, and the MDCT with framing.
+Quantization and the bitstream do not exist yet, so there are no results to show.
 
 | Phase | Content | Status |
 |---|---|---|
 | 1 | Specification | in progress |
-| 2 | Core: WAV, MDCT, quantization, bitstream, encoder and decoder without psychoacoustics | in progress: WAV done |
+| 2 | Core: WAV, MDCT, quantization, bitstream, encoder and decoder without psychoacoustics | in progress: WAV and MDCT done |
 | 3 | Psychoacoustic model, bit allocation with rate loop, better entropy coding | planned |
 | 4 | Test levels: unit, roundtrip, regression, end-to-end, fuzzing | CI skeleton only |
 | 5 | Evaluation: objective metrics and a MUSHRA-style listening test | planned |

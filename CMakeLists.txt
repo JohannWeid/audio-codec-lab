@@ -39,6 +39,10 @@ else()
 endif()
 
 add_library(codec
+  src/codec/fft.cpp
+  src/codec/framing.cpp
+  src/codec/mdct.cpp
+  src/codec/pcm.cpp
   src/codec/version.cpp
   src/codec/wav.cpp
 )
@@ -66,7 +70,11 @@ FetchContent_MakeAvailable(googletest)
 enable_testing()
 include(GoogleTest)
 add_executable(codec_tests
+  tests/test_fft.cpp
   tests/test_floating_point.cpp
+  tests/test_framing.cpp
+  tests/test_mdct.cpp
+  tests/test_pcm.cpp
   tests/test_version.cpp
   tests/test_wav.cpp
 )

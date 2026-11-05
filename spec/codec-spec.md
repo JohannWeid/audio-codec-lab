@@ -11,6 +11,8 @@ change once measurements exist.
   with a small tolerance.
 - Sample type in the signal path: `double`, through one alias (`Sample`), so that it can be changed
   in one place.
+- PCM becomes a sample by dividing by 32768, so the range is [-1, 1). The way back multiplies by
+  32768, rounds to the nearest integer with ties away from zero, and clips to the 16-bit range.
 
 ## 2. Transform
 
