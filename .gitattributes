@@ -1,0 +1,7 @@
+* text=auto eol=lf
+
+# Reference files are compared byte by byte, so Git must never touch their line endings.
+*.bin binary
+*.wav binary
+*.flac binary
+*.png binary

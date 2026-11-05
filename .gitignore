@@ -1,0 +1,29 @@
+# C++
+build/
+.cache/
+compile_commands.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# Robot Framework
+log.html
+output.xml
+report.html
+
+# Audio and results are created locally; see listening-test/README.md for the licensing rule
+listening-test/items/
+listening-test/stimuli/
+listening-test/results/
+eval/out/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
