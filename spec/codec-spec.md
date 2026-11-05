@@ -52,8 +52,27 @@ Header:
 | frame length | 2 bytes | New samples per frame, 1024 for now |
 | total samples | 8 bytes | Length of the original signal in samples |
 
-Each frame starts with its payload length in bytes, followed by the payload. The payload layout
-depends on the entropy coder and is defined in phase 2, which uses Rice codes.
+The decoder rejects any other sample rate, channel count or frame length.
+
+Each frame starts with its payload length in bytes as a 2-byte field, followed by the payload. The
+payload ends at a byte boundary, with zero bits as padding:
+
+| Field | Size | Meaning |
+|---|---|---|
+| gain | 8 bits | See section 6 |
+| for each of the 25 bands: | | |
+| empty flag | 1 bit | 1 if every coefficient of the band is zero; the band then ends here |
+| scalefactor difference | Exponential-Golomb, zigzag | Relative to the last transmitted scalefactor, starting at 0 |
+| Rice parameter difference | Exponential-Golomb, zigzag | Relative to the last transmitted parameter, starting at 0; the result is in 0 to 24 |
+| coefficients | Rice, zigzag | All coefficients of the band |
+
+A frame without any nonzero coefficient takes 7 bytes. The encoder chooses the Rice parameter of a
+band that gives the fewest bits.
+
+**Limit of the Rice code:** every band that is not empty costs at least one bit per coefficient, so
+below about one bit per sample a dense signal is reduced to its strongest parts. In a measurement
+with white noise, the SNR stays near 0 dB up to 48 kbit/s and reaches 2 dB at 64 kbit/s. Tonal
+signals are hardly affected. This is the main reason to replace the Rice code in phase 3.
 
 **Rice code with parameter k:** the quotient `value >> k` in unary as ones with a closing zero, then
 the k lowest bits. Quotients of 24 or more are written as 24 ones without a closing zero, followed
@@ -129,7 +148,11 @@ budget(n) = floor((n + 1) * R * M / fs) - floor(n * R * M / fs)
 ```
 
 At 32 kbit/s this gives 682, 683, 683 and then repeats; at 48 kbit/s every frame gets 1024 bits. The
-budget covers the whole frame including its length field. The file header is not counted.
+budget covers the whole frame including its length field. The file header is not counted. Bitrates
+from 8 to 512 kbit/s are accepted, and bits that a frame leaves unused are lost.
+
+**Rate loop in phase 2:** all scalefactors are 0, and a binary search finds the smallest gain whose
+frame fits the budget. This is also the flat noise allocation of the baseline in section 7.
 
 ## 7. Baseline
 

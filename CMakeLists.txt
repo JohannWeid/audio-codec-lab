@@ -40,8 +40,10 @@ endif()
 
 add_library(codec
   src/codec/bitstream.cpp
+  src/codec/codec.cpp
   src/codec/entropy.cpp
   src/codec/fft.cpp
+  src/codec/frame.cpp
   src/codec/framing.cpp
   src/codec/mdct.cpp
   src/codec/pcm.cpp
@@ -74,9 +76,11 @@ enable_testing()
 include(GoogleTest)
 add_executable(codec_tests
   tests/test_bitstream.cpp
+  tests/test_codec.cpp
   tests/test_entropy.cpp
   tests/test_fft.cpp
   tests/test_floating_point.cpp
+  tests/test_frame.cpp
   tests/test_framing.cpp
   tests/test_mdct.cpp
   tests/test_pcm.cpp

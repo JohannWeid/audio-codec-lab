@@ -6,15 +6,14 @@ A small MDCT-based perceptual transform codec with a psychoacoustic model, a rat
 coding, tested on Windows, Linux and macOS and evaluated with a MUSHRA-style listening test. It is a
 learning project about the principles of perceptual coding, not a competitor to AAC or Opus.
 
-**Status: work in progress.** This repository currently holds the project skeleton (build system,
-CI, floating-point rules, draft specification), WAV input and output, the MDCT with framing, and
-the building blocks for quantization and entropy coding. They are not yet joined into an encoder and
-decoder, so there are no results to show.
+**Status: work in progress.** The encoder and decoder work end to end, from WAV to bitstream and
+back, but still without a psychoacoustic model: the quantization noise is flat, so the codec is not
+yet perceptual. There are no listening results to show.
 
 | Phase | Content | Status |
 |---|---|---|
 | 1 | Specification | in progress |
-| 2 | Core: WAV, MDCT, quantization, bitstream, encoder and decoder without psychoacoustics | in progress: WAV and MDCT done |
+| 2 | Core: WAV, MDCT, quantization, bitstream, encoder and decoder without psychoacoustics | done, with Rice codes as a placeholder |
 | 3 | Psychoacoustic model, bit allocation with rate loop, better entropy coding | planned |
 | 4 | Test levels: unit, roundtrip, regression, end-to-end, fuzzing | CI skeleton only |
 | 5 | Evaluation: objective metrics and a MUSHRA-style listening test | planned |
@@ -53,12 +52,22 @@ ctest --preset default
 | `ci` | Release build with warnings as errors, used by CI |
 | `sanitize` | Debug build with AddressSanitizer and UndefinedBehaviorSanitizer, GCC and Clang only |
 
+## Usage
+
+The input must be a WAV file with 16-bit PCM, 48 kHz and one channel. The tools are in
+`build/default`, or in `build/default/Release` on Windows.
+
+```bash
+codec-encode in.wav out.bin --bitrate 64000
+codec-decode out.bin out.wav
+```
+
 ## Repository layout
 
 ```text
 spec/               Codec and bitstream specification
 src/codec/          Codec library
-src/tools/          Command-line tools codec-encode and codec-decode (placeholders for now)
+src/tools/          Command-line tools codec-encode and codec-decode
 tests/              Unit tests with GoogleTest
 tests/e2e/          End-to-end tests with Robot Framework (planned)
 eval/               Metrics, plots and listening-test analysis in Python (planned)
