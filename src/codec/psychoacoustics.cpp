@@ -151,6 +151,7 @@ MaskingAnalysis PsychoacousticModel::analyze(const std::vector<Sample>& block) c
     }
 
     MaskingAnalysis result;
+    result.quiet_threshold = quiet_threshold_;
     for (std::size_t band = 0; band < kBandCount; ++band) {
         for (std::size_t k = kBandEdges[band]; k < kBandEdges[band + 1]; ++k) {
             result.band_energy[band] += power[k];

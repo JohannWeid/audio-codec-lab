@@ -74,6 +74,10 @@ below about one bit per sample a dense signal is reduced to its strongest parts.
 with white noise, the SNR stays near 0 dB up to 48 kbit/s and reaches 2 dB at 64 kbit/s. Tonal
 signals are hardly affected. This is the main reason to replace the Rice code in phase 3.
 
+In a signal of tones and noise bursts at 32 kbit/s, the frames use about 70 bytes, while the empirical
+entropy of the same values per band gives about 16 bytes, not counting any side information. That
+estimate is optimistic, but it shows how much a better entropy coder can gain.
+
 **Rice code with parameter k:** the quotient `value >> k` in unary as ones with a closing zero, then
 the k lowest bits. Quotients of 24 or more are written as 24 ones without a closing zero, followed
 by an Exponential-Golomb code of order 0 for `quotient - 24`, and then the k lowest bits. One value
@@ -181,15 +185,54 @@ At 32 kbit/s this gives 682, 683, 683 and then repeats; at 48 kbit/s every frame
 budget covers the whole frame including its length field. The file header is not counted. Bitrates
 from 8 to 512 kbit/s are accepted, and bits that a frame leaves unused are lost.
 
-**Rate loop in phase 2:** all scalefactors are 0, and a binary search finds the smallest gain whose
-frame fits the budget. This is also the flat noise allocation of the baseline in section 7.
+**Inner loop:** a binary search finds the smallest gain whose frame fits the budget, for fixed
+scalefactors. If not even the highest gain fits, the frame stays empty.
+
+**Scalefactors from the masking threshold:** a quantizer with step `s` adds a noise energy of about
+`s^2 / 12` per coefficient, so a band of width `w` can use the step `s = sqrt(12 * threshold / w)`.
+The scalefactor is `-8 * log2(s)`, rounded. At a gain of 144, each band then has about as much noise
+as its threshold allows. The inner loop moves all bands together: a lower gain stays below the
+thresholds, and a higher one goes above them if the budget requires it.
+
+**Inaudible bands stay empty:** if the whole energy of a band lies below the threshold in quiet, its
+coefficients are set to zero before quantization, since nobody can hear them in any case. This keeps
+a large budget from going to content such as the rounding noise of the 16-bit input. Bands that are
+only masked by the rest of the signal stay: their coarse steps remove them if bits are short, and
+they are coded if the budget allows it. Dropping those as well would stop the quality of a tone from
+rising at about 31 dB SNR, whatever the bitrate, because the skirts of its spectrum would be missing.
+
+**Outer loop:** after the inner loop, the noise of each band is measured on the coefficients. Each
+band above its threshold gets a scalefactor that is 2 units higher, which is 1.5 dB finer, and the
+inner loop runs again. This repeats up to 8 times and stops as soon as the mean excess no longer
+falls. The mean excess is the amount in dB by which noise lies above the thresholds, averaged over
+all bands, with bands below their threshold counting as 0.
+
+In a measurement with tones and noise bursts, the outer loop lowers the mean excess by about 0.02 dB,
+because the computed scalefactors are already close. It stays in the encoder for now, since it may
+matter more with a better entropy coder.
 
 ## 7. Baseline
 
-`--psy off` selects flat noise allocation instead of the masking model. Everything else stays the
-same: transform, entropy coder and rate loop. The comparison then measures only the psychoacoustic
-model. The baseline is expected to reach a similar or better SNR at the same bitrate and to sound
-worse, because SNR does not reflect perception.
+`--psy off` selects flat noise allocation instead of the masking model: all scalefactors are 0, and
+there is no outer loop. Everything else stays the same: transform, entropy coder and inner loop. The
+comparison then measures only the psychoacoustic model. The baseline is expected to reach a similar
+or better SNR at the same bitrate and to sound worse, because SNR does not reflect perception.
+
+Measured as the mean excess over the model's own thresholds, flat noise against the model, in dB:
+
+| Signal | 32 kbit/s | 48 kbit/s | 64 kbit/s | 96 kbit/s |
+|---|---|---|---|---|
+| Tone at 1 kHz | 0.07 / 0.00 | 0.06 / 0.00 | 0.01 / 0.00 | 0.00 / 0.00 |
+| Harmonic tones with weak noise | 1.08 / 1.85 | 0.94 / 0.53 | 0.85 / 0.00 | 0.34 / 0.00 |
+| Pink noise | 3.08 / 5.67 | 2.60 / 5.38 | 1.90 / 4.18 | 0.08 / 0.00 |
+| White noise | 6.34 / 6.08 | 6.06 / 5.77 | 4.42 / 4.53 | 0.53 / 0.00 |
+
+With enough bits, the model keeps all noise below its thresholds, which flat noise does not. At low
+bitrates it does worse for broadband signals, because of the Rice code: with similar signal-to-mask
+ratios in all bands, all of them reach the limit of one bit per coefficient at once and become empty
+together. Pink noise at 64 kbit/s falls to 1.2 dB SNR that way, against 7.0 dB with flat noise. An
+entropy coder that can spend less than one bit per value should remove this cliff. These values only
+compare against the model itself, so whether it sounds better can only be shown by a listening test.
 
 ## 8. Open questions
 

@@ -7,8 +7,10 @@ coding, tested on Windows, Linux and macOS and evaluated with a MUSHRA-style lis
 learning project about the principles of perceptual coding, not a competitor to AAC or Opus.
 
 **Status: work in progress.** The encoder and decoder work end to end, from WAV to bitstream and
-back, but still without a psychoacoustic model: the quantization noise is flat, so the codec is not
-yet perceptual. There are no listening results to show. Reference bitstreams already decode to
+back, and a psychoacoustic model shapes the quantization noise. Measured against the model's own
+thresholds, this helps with enough bits, about 96 kbit/s for broadband signals. Below that, the
+placeholder entropy coder still makes it worse than flat noise for such signals. Nobody has listened
+to it in a test yet, so there are no listening results to show. Reference bitstreams decode to
 identical PCM on Linux, Windows and macOS, on x86-64 and ARM (see
 [tests/conformance](tests/conformance/README.md)).
 
@@ -16,7 +18,7 @@ identical PCM on Linux, Windows and macOS, on x86-64 and ARM (see
 |---|---|---|
 | 1 | Specification | in progress |
 | 2 | Core: WAV, MDCT, quantization, bitstream, encoder and decoder without psychoacoustics | done, with Rice codes as a placeholder |
-| 3 | Psychoacoustic model, bit allocation with rate loop, better entropy coding | in progress: model written, not yet used by the encoder |
+| 3 | Psychoacoustic model, bit allocation with rate loop, better entropy coding | in progress: model and bit allocation done, entropy coding open |
 | 4 | Test levels: unit, roundtrip, conformance, end-to-end, damaged input | done for the current code, grows with phase 3 |
 | 5 | Evaluation: objective metrics and a MUSHRA-style listening test | planned |
 
@@ -63,6 +65,9 @@ The input must be a WAV file with 16-bit PCM, 48 kHz and one channel. The tools 
 codec-encode in.wav out.bin --bitrate 64000
 codec-decode out.bin out.wav
 ```
+
+`--psy off` selects the baseline for comparison: the same codec with flat noise instead of the
+psychoacoustic model.
 
 ## Repository layout
 

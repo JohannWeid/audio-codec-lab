@@ -85,6 +85,7 @@ int best_rice_parameter(const std::int32_t* values, std::size_t count) {
         for (std::size_t i = 0; i < count; ++i) {
             bits += static_cast<std::uint64_t>(rice_bits(zigzag_encode(values[i]), k));
         }
+        // All parameters must be tried: because of the escape, the cost can have several minima.
         if (bits < best_bits) {
             best_bits = bits;
             best = k;

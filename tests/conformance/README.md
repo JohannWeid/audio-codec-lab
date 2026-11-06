@@ -7,8 +7,9 @@ so every platform in CI decodes the same bytes.
 | File | Content |
 |---|---|
 | `input.wav` | Test signal of 0.25 seconds, made by `regenerate.py` |
-| `ref_32k.bin`, `ref_64k.bin` | Bitstreams of that signal |
-| `ref_32k.wav`, `ref_64k.wav` | Their decoded output on the platform that created them |
+| `ref_32k.bin`, `ref_64k.bin` | Bitstreams of that signal with flat noise, the baseline |
+| `ref_psy_64k.bin` | Bitstream of that signal with the psychoacoustic model |
+| The `.wav` file of each bitstream | Its decoded output on the platform that created it |
 
 [`tests/test_conformance.cpp`](../test_conformance.cpp) checks three things on every platform:
 

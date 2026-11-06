@@ -28,6 +28,9 @@ struct MaskingAnalysis {
     BandValues tonality{};
     /// Noise energy that each band can hold without it being heard.
     BandValues masking_threshold{};
+    /// The part of masking_threshold that holds even without any masker. A band below this cannot
+    /// be heard at all, whatever else the signal contains.
+    BandValues quiet_threshold{};
 };
 
 /// The simplified psychoacoustic model from section 5 of spec/codec-spec.md, for 48 kHz.

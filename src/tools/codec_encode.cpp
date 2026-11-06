@@ -20,9 +20,10 @@ constexpr int kExitUsage = 2;
 
 int usage() {
     std::cerr << "codec-encode " << codec::version() << "\n"
-              << "usage: codec-encode in.wav out.bin --bitrate 64000\n"
+              << "usage: codec-encode in.wav out.bin --bitrate 64000 [--psy on|off]\n"
               << "The input must be 16-bit PCM, 48 kHz, mono. The bitrate is in bit/s, from "
-              << codec::kMinBitrate << " to " << codec::kMaxBitrate << ".\n";
+              << codec::kMinBitrate << " to " << codec::kMaxBitrate << ".\n"
+              << "--psy off selects the baseline with flat noise instead of the masking model.\n";
     return kExitUsage;
 }
 
@@ -51,6 +52,7 @@ int main(int argc, char** argv) {
     std::vector<std::string> positional;
     std::uint32_t bitrate = 0;
     bool have_bitrate = false;
+    bool psychoacoustics = true;
     for (int i = 1; i < argc; ++i) {
         const std::string argument = argv[i];
         if (argument == "--bitrate") {
@@ -58,6 +60,13 @@ int main(int argc, char** argv) {
                 return usage();
             }
             have_bitrate = true;
+            ++i;
+        } else if (argument == "--psy") {
+            const std::string value = i + 1 < argc ? argv[i + 1] : "";
+            if (value != "on" && value != "off") {
+                return usage();
+            }
+            psychoacoustics = value == "on";
             ++i;
         } else {
             positional.push_back(argument);
@@ -71,6 +80,7 @@ int main(int argc, char** argv) {
         const codec::WavAudio audio = codec::read_wav(positional[0]);
         codec::EncoderOptions options;
         options.bitrate = bitrate;
+        options.psychoacoustics = psychoacoustics;
         const std::vector<std::uint8_t> stream = codec::encode(audio, options);
         write_file(positional[1], stream);
 

@@ -29,10 +29,12 @@ constexpr double kSnrToleranceDb = 0.5;
 const struct Reference {
     const char* name;
     std::uint32_t bitrate;
+    bool psychoacoustics;
     std::uint64_t integer_hash;
 } kReferences[] = {
-    {"ref_32k", 32000, 0x7A5D27778AC6445Du},
-    {"ref_64k", 64000, 0x3EEB90D2AF8BAB31u},
+    {"ref_32k", 32000, false, 0x7A5D27778AC6445Du},
+    {"ref_64k", 64000, false, 0x3EEB90D2AF8BAB31u},
+    {"ref_psy_64k", 64000, true, 0xF5D74F03DFAAA85Bu},
 };
 
 std::filesystem::path data_path(const std::string& file) {
@@ -140,6 +142,7 @@ TEST(Conformance, EncoderReachesTheQualityOfTheReference) {
         const std::string name = reference.name;
         codec::EncoderOptions options;
         options.bitrate = reference.bitrate;
+        options.psychoacoustics = reference.psychoacoustics;
         const Bytes stream = codec::encode(input, options);
         const Bytes reference_stream = read_bytes(data_path(name + ".bin"));
 

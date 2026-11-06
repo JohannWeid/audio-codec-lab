@@ -14,6 +14,8 @@ inline constexpr std::uint32_t kMaxBitrate = 512000;
 
 struct EncoderOptions {
     std::uint32_t bitrate = 64000;
+    /// Off selects the flat noise allocation of the baseline, see section 7 of spec/codec-spec.md.
+    bool psychoacoustics = true;
 };
 
 /// Number of bits that frame frame_index may use, including its length field. The sum over the

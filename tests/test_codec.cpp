@@ -39,9 +39,11 @@ WavAudio make_audio(Pcm samples) {
     return audio;
 }
 
-Bytes encode_at(const Pcm& samples, std::uint32_t bitrate) {
+// Flat noise by default, since the tests of SNR values only make sense for the flat allocation.
+Bytes encode_at(const Pcm& samples, std::uint32_t bitrate, bool psychoacoustics = false) {
     EncoderOptions options;
     options.bitrate = bitrate;
+    options.psychoacoustics = psychoacoustics;
     return encode(make_audio(samples), options);
 }
 
@@ -184,7 +186,10 @@ TEST(Encoder, RejectsWhatTheSpecificationExcludes) {
 
 TEST(Encoder, GivesTheSameBitstreamForTheSameInput) {
     const Pcm input = mixture(8000);
-    EXPECT_EQ(encode_at(input, 48000), encode_at(input, 48000));
+    for (const bool psychoacoustics : {false, true}) {
+        EXPECT_EQ(encode_at(input, 48000, psychoacoustics),
+                  encode_at(input, 48000, psychoacoustics));
+    }
 }
 
 TEST(Encoder, NeverExceedsTheBudgetOfAFrame) {
@@ -193,11 +198,14 @@ TEST(Encoder, NeverExceedsTheBudgetOfAFrame) {
                            full_scale_square(size)};
     for (const Pcm& signal : signals) {
         for (const std::uint32_t bitrate : {8000u, 32000u, 64000u, 512000u}) {
-            SCOPED_TRACE(bitrate);
-            const std::vector<std::uint32_t> sizes = frame_bits(encode_at(signal, bitrate));
-            ASSERT_EQ(sizes.size(), codec::frame_count(size, kFrameLength));
-            for (std::size_t i = 0; i < sizes.size(); ++i) {
-                ASSERT_LE(sizes[i], frame_budget_bits(i, bitrate));
+            for (const bool psychoacoustics : {false, true}) {
+                SCOPED_TRACE(testing::Message() << bitrate << " psy=" << psychoacoustics);
+                const std::vector<std::uint32_t> sizes =
+                    frame_bits(encode_at(signal, bitrate, psychoacoustics));
+                ASSERT_EQ(sizes.size(), codec::frame_count(size, kFrameLength));
+                for (std::size_t i = 0; i < sizes.size(); ++i) {
+                    ASSERT_LE(sizes[i], frame_budget_bits(i, bitrate));
+                }
             }
         }
     }
@@ -225,28 +233,36 @@ TEST(Codec, OutputHasExactlyTheLengthOfTheInput) {
     for (const std::size_t size :
          {std::size_t{0}, std::size_t{1}, std::size_t{1023}, std::size_t{1024}, std::size_t{1025},
           std::size_t{4096}, std::size_t{10000}}) {
-        SCOPED_TRACE(size);
-        const WavAudio output = decode(encode_at(noise(0.5, size, 44), 64000));
-        EXPECT_EQ(output.samples.size(), size);
-        EXPECT_EQ(output.sample_rate, kSampleRate);
-        EXPECT_EQ(output.channels, 1u);
+        for (const bool psychoacoustics : {false, true}) {
+            SCOPED_TRACE(testing::Message() << size << " psy=" << psychoacoustics);
+            const WavAudio output = decode(encode_at(noise(0.5, size, 44), 64000, psychoacoustics));
+            EXPECT_EQ(output.samples.size(), size);
+            EXPECT_EQ(output.sample_rate, kSampleRate);
+            EXPECT_EQ(output.channels, 1u);
+        }
     }
 }
 
 TEST(Codec, SilenceStaysExactlySilent) {
     const Pcm silence(5000);
-    const Bytes stream = encode_at(silence, 64000);
-    EXPECT_EQ(decode(stream).samples, silence);
-    // Every frame holds only its length field and five bytes of payload.
-    EXPECT_EQ(stream.size(), kHeaderSize + codec::frame_count(5000, kFrameLength) * 7);
+    for (const bool psychoacoustics : {false, true}) {
+        SCOPED_TRACE(psychoacoustics);
+        const Bytes stream = encode_at(silence, 64000, psychoacoustics);
+        EXPECT_EQ(decode(stream).samples, silence);
+        // Every frame holds only its length field and five bytes of payload.
+        EXPECT_EQ(stream.size(), kHeaderSize + codec::frame_count(5000, kFrameLength) * 7);
+    }
 }
 
 TEST(Codec, OutputLinesUpWithTheInput) {
     Pcm input(6000);
     input[3210] = 30000;
-    const Pcm output = decode(encode_at(input, 256000)).samples;
-    const auto largest = std::max_element(output.begin(), output.end());
-    EXPECT_EQ(largest - output.begin(), 3210);
+    for (const bool psychoacoustics : {false, true}) {
+        SCOPED_TRACE(psychoacoustics);
+        const Pcm output = decode(encode_at(input, 256000, psychoacoustics)).samples;
+        const auto largest = std::max_element(output.begin(), output.end());
+        EXPECT_EQ(largest - output.begin(), 3210);
+    }
 }
 
 TEST(Codec, QualityGrowsWithTheBitrate) {
@@ -285,8 +301,11 @@ TEST(Codec, AbruptSignalEndsLowerTheOverallSnrOnly) {
 
 TEST(Codec, HandlesAFullScaleSignalAtTheLowestBitrate) {
     const Pcm input = full_scale_square(4096);
-    const WavAudio output = decode(encode_at(input, codec::kMinBitrate));
-    EXPECT_EQ(output.samples.size(), input.size());
+    for (const bool psychoacoustics : {false, true}) {
+        SCOPED_TRACE(psychoacoustics);
+        const WavAudio output = decode(encode_at(input, codec::kMinBitrate, psychoacoustics));
+        EXPECT_EQ(output.samples.size(), input.size());
+    }
 }
 
 TEST(Decoder, ParseGivesTheSameIntegersAsTheEncoderUsed) {

@@ -49,9 +49,33 @@ Quality Grows With The Bitrate
     Should Be True    ${low} < ${middle} < ${high}
 
 A Tone Reaches The Expected Quality
+    [Documentation]    The abrupt start and end of the test signal lower this value, and the model
+    ...    aims at noise below its thresholds rather than at a high SNR.
     ${input}=    Create Signal    tone    ${ONE_SECOND}
     ${snr}=    Snr At Bitrate    ${input}    64000
-    Should Be True    ${snr} > 45
+    Log    ${snr}
+    Should Be True    ${snr} > 20
+
+The Psychoacoustic Model Is On By Default
+    ${input}=    Create Signal    mixture    10000
+    ${default}=    Encode    ${input}    64000    default.bin
+    ${with_model}=    Set Variable    ${WORK}${/}with_model.bin
+    Run Successfully    ${ENCODER}    ${input}    ${with_model}    --bitrate    64000    --psy    on
+    ${default_bytes}=    Get Binary File    ${default}
+    ${with_model_bytes}=    Get Binary File    ${with_model}
+    Should Be Equal    ${default_bytes}    ${with_model_bytes}
+
+The Baseline Gives A Higher SNR Than The Model
+    [Documentation]    Flat noise is the best choice for the SNR, but not for the ear. The SNR is the
+    ...    one thing that must get worse when the model moves noise to where it is masked.
+    ${input}=    Create Signal    mixture    ${ONE_SECOND}
+    ${with_model}=    Snr At Bitrate    ${input}    64000
+    ${stream}=    Set Variable    ${WORK}${/}baseline.bin
+    ${decoded}=    Set Variable    ${WORK}${/}baseline.wav
+    Run Successfully    ${ENCODER}    ${input}    ${stream}    --bitrate    64000    --psy    off
+    Run Successfully    ${DECODER}    ${stream}    ${decoded}
+    ${baseline}=    Snr Db    ${input}    ${decoded}
+    Should Be True    ${baseline} > ${with_model}
 
 Silence Stays Silent
     ${input}=    Create Signal    silence    10000
@@ -89,6 +113,8 @@ Encoder Reports Wrong Usage
     Should Fail With Code    2    ${ENCODER}    ${input}    ${WORK}${/}out.bin    --bitrate
     Should Fail With Code    2    ${ENCODER}    ${input}    ${WORK}${/}out.bin    --bitrate    abc
     Should Fail With Code    2    ${ENCODER}    ${input}    ${WORK}${/}out.bin    --bitrate    -1
+    Should Fail With Code    2    ${ENCODER}    ${input}    ${WORK}${/}out.bin    --bitrate    64000    --psy
+    Should Fail With Code    2    ${ENCODER}    ${input}    ${WORK}${/}out.bin    --bitrate    64000    --psy    maybe
     File Should Not Exist    ${WORK}${/}out.bin
 
 Encoder Rejects Unsupported Input

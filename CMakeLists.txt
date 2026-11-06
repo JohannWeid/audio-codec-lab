@@ -39,6 +39,7 @@ else()
 endif()
 
 add_library(codec
+  src/codec/allocation.cpp
   src/codec/bitstream.cpp
   src/codec/codec.cpp
   src/codec/entropy.cpp
@@ -76,6 +77,7 @@ FetchContent_MakeAvailable(googletest)
 enable_testing()
 include(GoogleTest)
 add_executable(codec_tests
+  tests/test_allocation.cpp
   tests/test_bitstream.cpp
   tests/test_codec.cpp
   tests/test_conformance.cpp

@@ -2,12 +2,12 @@
 
 #include <cstddef>
 #include <stdexcept>
-#include <utility>
 
+#include "codec/allocation.hpp"
 #include "codec/framing.hpp"
 #include "codec/mdct.hpp"
 #include "codec/pcm.hpp"
-#include "codec/quantizer.hpp"
+#include "codec/psychoacoustics.hpp"
 
 namespace codec {
 namespace {
@@ -21,32 +21,6 @@ constexpr std::uint32_t kLengthFieldBits = 16;
 
 // An empty frame still has a length field, a gain and one bit for each band, so 7 bytes in total.
 constexpr std::size_t kSmallestFrameBytes = kLengthFieldBytes + 5;
-
-std::vector<std::uint8_t> frame_payload(const std::vector<Sample>& coefficients, int gain) {
-    BitWriter writer;
-    write_frame_payload(quantize_frame(coefficients, gain, Scalefactors{}), writer);
-    return writer.bytes();
-}
-
-// The rate loop: the smallest gain, and so the finest step, whose payload still fits. The highest
-// gain always fits, since its step is far above every coefficient and the frame becomes empty.
-std::vector<std::uint8_t> payload_for_budget(const std::vector<Sample>& coefficients,
-                                             std::size_t max_payload_bytes) {
-    int fits = kMaxGain;
-    int too_large = kMinGain - 1;
-    std::vector<std::uint8_t> best = frame_payload(coefficients, fits);
-    while (fits - too_large > 1) {
-        const int gain = too_large + (fits - too_large) / 2;
-        std::vector<std::uint8_t> payload = frame_payload(coefficients, gain);
-        if (payload.size() <= max_payload_bytes) {
-            fits = gain;
-            best = std::move(payload);
-        } else {
-            too_large = gain;
-        }
-    }
-    return best;
-}
 
 }  // namespace
 
@@ -82,11 +56,18 @@ std::vector<std::uint8_t> encode(const WavAudio& audio, const EncoderOptions& op
     std::vector<std::uint8_t> stream = header.bytes();
 
     const Mdct mdct(kFrameLength);
-    const std::vector<std::vector<Sample>> frames = analyze(pcm_to_samples(audio.samples), mdct);
-    for (std::size_t i = 0; i < frames.size(); ++i) {
+    const PsychoacousticModel model;
+    const std::vector<std::vector<Sample>> blocks =
+        split_into_blocks(pcm_to_samples(audio.samples), kFrameLength);
+    for (std::size_t i = 0; i < blocks.size(); ++i) {
         const std::uint32_t budget = frame_budget_bits(i, options.bitrate);
         const std::size_t max_payload_bytes = (budget - kLengthFieldBits) / 8;
-        const std::vector<std::uint8_t> payload = payload_for_budget(frames[i], max_payload_bytes);
+        const std::vector<Sample> coefficients = mdct.forward(blocks[i]);
+        const EncodedFrame encoded =
+            options.psychoacoustics
+                ? encode_perceptual(coefficients, model.analyze(blocks[i]), max_payload_bytes)
+                : encode_flat(coefficients, max_payload_bytes);
+        const std::vector<std::uint8_t>& payload = encoded.payload;
         stream.push_back(static_cast<std::uint8_t>(payload.size() >> 8));
         stream.push_back(static_cast<std::uint8_t>(payload.size() & 0xFFu));
         stream.insert(stream.end(), payload.begin(), payload.end());

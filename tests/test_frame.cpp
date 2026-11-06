@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -282,6 +283,28 @@ TEST(FramePayload, RandomDataIsHandled) {
         }
     }
     RecordProperty("accepted", accepted);
+}
+
+// Because of the escape, the cost can fall again after it has risen. With many zeros and a few very
+// large values, each step of k costs more at first, until the large values drop below the escape.
+// A search that stops at the first rise would miss the true minimum here.
+TEST(BestRiceParameter, FindsTheMinimumBehindARisingCost) {
+    std::vector<std::int32_t> values(12, 0);
+    std::fill(values.begin() + 8, values.end(), 1 << 20);
+    const auto cost = [&values](int k) {
+        std::uint64_t sum = 0;
+        for (const std::int32_t value : values) {
+            sum += static_cast<std::uint64_t>(codec::rice_bits(zigzag_encode(value), k));
+        }
+        return sum;
+    };
+    ASSERT_GT(cost(1), cost(0));  // The precondition: the cost rises right at the start.
+
+    const int chosen = best_rice_parameter(values.data(), values.size());
+    EXPECT_GT(chosen, 1);
+    for (int k = 0; k <= kMaxBandRiceParameter; ++k) {
+        EXPECT_LE(cost(chosen), cost(k));
+    }
 }
 
 TEST(BestRiceParameter, ChoosesTheCheapestParameter) {

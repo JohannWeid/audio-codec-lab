@@ -14,7 +14,12 @@ import wave
 
 SAMPLE_RATE = 48000
 SAMPLE_COUNT = 12000
-BITRATES = {"ref_32k": 32000, "ref_64k": 64000}
+# Name of the reference: bitrate, and whether the psychoacoustic model is on.
+REFERENCES = {
+    "ref_32k": (32000, "off"),
+    "ref_64k": (64000, "off"),
+    "ref_psy_64k": (64000, "on"),
+}
 DIRECTORY = pathlib.Path(__file__).resolve().parent
 
 
@@ -52,10 +57,13 @@ def main():
 
     source = DIRECTORY / "input.wav"
     write_wav(source, make_signal())
-    for name, bitrate in BITRATES.items():
+    for name, (bitrate, psychoacoustics) in REFERENCES.items():
         stream = DIRECTORY / f"{name}.bin"
         decoded = DIRECTORY / f"{name}.wav"
-        subprocess.run([tools / "codec-encode", source, stream, "--bitrate", str(bitrate)], check=True)
+        subprocess.run(
+            [tools / "codec-encode", source, stream, "--bitrate", str(bitrate), "--psy", psychoacoustics],
+            check=True,
+        )
         subprocess.run([tools / "codec-decode", stream, decoded], check=True)
     print("Now run the conformance tests and update the hashes in tests/test_conformance.cpp.")
 
