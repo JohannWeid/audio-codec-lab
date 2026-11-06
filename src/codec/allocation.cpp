@@ -9,19 +9,21 @@
 namespace codec {
 namespace {
 
-// The outer loop refines a band by 1.5 dB per round.
-constexpr int kOuterLoopStep = 2;
-constexpr int kOuterLoopRounds = 8;
-
 constexpr int kStepsPerOctave = 8;
 
+// The bandwidth at a low bitrate leaves at least 1.75 bits for each coded coefficient: 4
+// coefficients for each 7 bits. This value comes from a comparison of several values, see section 6
+// of spec/codec-spec.md.
+constexpr std::size_t kCodedCoefficients = 4;
+constexpr std::size_t kCodedBits = 7;
+
+// Tries out one gain on a copy of the state, so that a rejected attempt leaves no trace.
 EncodedFrame encode_at_gain(const std::vector<Sample>& coefficients, int gain,
-                            const Scalefactors& scalefactors) {
+                            const Scalefactors& scalefactors, const FrameCoderState& state) {
     EncodedFrame result;
     result.frame = quantize_frame(coefficients, gain, scalefactors);
-    BitWriter writer;
-    write_frame_payload(result.frame, writer);
-    result.payload = writer.bytes();
+    result.state = state;
+    result.payload = encode_frame_payload(result.frame, result.state);
     return result;
 }
 
@@ -44,6 +46,20 @@ std::vector<Sample> without_inaudible_bands(const std::vector<Sample>& coefficie
         }
     }
     return audible;
+}
+
+// How many of the lowest bands a budget can afford. The bands above them stay empty. Each band
+// counts about the same for the ear, but the high ones hold far more coefficients. If bits are too
+// short for all bands, it is better to serve the low ones properly than to spread too few bits over
+// everything.
+std::size_t affordable_band_count(std::size_t max_payload_bytes) noexcept {
+    const std::size_t affordable_coefficients =
+        max_payload_bytes * 8 * kCodedCoefficients / kCodedBits;
+    std::size_t bands = kBandCount;
+    while (bands > 1 && kBandEdges[bands] > affordable_coefficients) {
+        --bands;
+    }
+    return bands;
 }
 
 }  // namespace
@@ -88,17 +104,17 @@ Sample mean_excess_db(const BandValues& noise, const BandValues& thresholds) {
 
 EncodedFrame encode_with_scalefactors(const std::vector<Sample>& coefficients,
                                       const Scalefactors& scalefactors,
-                                      std::size_t max_payload_bytes) {
-    EncodedFrame best = encode_at_gain(coefficients, kMaxGain, scalefactors);
+                                      std::size_t max_payload_bytes, const FrameCoderState& state) {
+    EncodedFrame best = encode_at_gain(coefficients, kMaxGain, scalefactors, state);
     if (best.payload.size() > max_payload_bytes) {
-        return encode_at_gain(std::vector<Sample>(kFrameLength), kMaxGain, Scalefactors{});
+        return encode_at_gain(std::vector<Sample>(kFrameLength), kMaxGain, Scalefactors{}, state);
     }
 
     int fits = kMaxGain;
     int too_large = kMinGain - 1;
     while (fits - too_large > 1) {
         const int gain = too_large + (fits - too_large) / 2;
-        EncodedFrame candidate = encode_at_gain(coefficients, gain, scalefactors);
+        EncodedFrame candidate = encode_at_gain(coefficients, gain, scalefactors, state);
         if (candidate.payload.size() <= max_payload_bytes) {
             fits = gain;
             best = std::move(candidate);
@@ -109,40 +125,20 @@ EncodedFrame encode_with_scalefactors(const std::vector<Sample>& coefficients,
     return best;
 }
 
-EncodedFrame encode_flat(const std::vector<Sample>& coefficients, std::size_t max_payload_bytes) {
-    return encode_with_scalefactors(coefficients, Scalefactors{}, max_payload_bytes);
+EncodedFrame encode_flat(const std::vector<Sample>& coefficients, std::size_t max_payload_bytes,
+                         const FrameCoderState& state) {
+    return encode_with_scalefactors(coefficients, Scalefactors{}, max_payload_bytes, state);
 }
 
 EncodedFrame encode_perceptual(const std::vector<Sample>& coefficients,
-                               const MaskingAnalysis& analysis, std::size_t max_payload_bytes) {
-    const BandValues& thresholds = analysis.masking_threshold;
-    const std::vector<Sample> audible =
-        without_inaudible_bands(coefficients, analysis.quiet_threshold);
-    Scalefactors scalefactors = scalefactors_for_thresholds(thresholds);
-    EncodedFrame best = encode_with_scalefactors(audible, scalefactors, max_payload_bytes);
-    Sample best_excess = mean_excess_db(band_noise(coefficients, best.frame), thresholds);
-
-    for (int round = 0; round < kOuterLoopRounds && best_excess > 0; ++round) {
-        const BandValues noise = band_noise(coefficients, best.frame);
-        bool changed = false;
-        for (std::size_t band = 0; band < kBandCount; ++band) {
-            if (noise[band] > thresholds[band] && scalefactors[band] < kMaxScalefactor) {
-                scalefactors[band] = std::min(scalefactors[band] + kOuterLoopStep, kMaxScalefactor);
-                changed = true;
-            }
-        }
-        if (!changed) {
-            break;
-        }
-        EncodedFrame candidate = encode_with_scalefactors(audible, scalefactors, max_payload_bytes);
-        const Sample excess = mean_excess_db(band_noise(coefficients, candidate.frame), thresholds);
-        if (excess >= best_excess) {
-            break;
-        }
-        best = std::move(candidate);
-        best_excess = excess;
-    }
-    return best;
+                               const MaskingAnalysis& analysis, std::size_t max_payload_bytes,
+                               const FrameCoderState& state) {
+    std::vector<Sample> audible = without_inaudible_bands(coefficients, analysis.quiet_threshold);
+    std::fill(audible.begin() +
+                  static_cast<std::ptrdiff_t>(kBandEdges[affordable_band_count(max_payload_bytes)]),
+              audible.end(), Sample{0});
+    return encode_with_scalefactors(
+        audible, scalefactors_for_thresholds(analysis.masking_threshold), max_payload_bytes, state);
 }
 
 }  // namespace codec

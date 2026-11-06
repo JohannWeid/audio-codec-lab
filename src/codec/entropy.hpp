@@ -1,34 +1,33 @@
 #pragma once
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 
-#include "codec/bitstream.hpp"
+#include "codec/range_coder.hpp"
 
 namespace codec {
-
-/// Largest Rice parameter k that a code may use.
-inline constexpr int kMaxRiceParameter = 31;
 
 /// Maps signed values to unsigned ones, so that small magnitudes stay small:
 /// 0, -1, 1, -2, 2 become 0, 1, 2, 3, 4.
 std::uint32_t zigzag_encode(std::int32_t value) noexcept;
 std::int32_t zigzag_decode(std::uint32_t value) noexcept;
 
-/// Exponential-Golomb code of order 0. Throws std::invalid_argument for 0xFFFFFFFF, which the code
-/// cannot represent.
-void write_exp_golomb(BitWriter& writer, std::uint32_t value);
-std::uint32_t read_exp_golomb(BitReader& reader);
-int exp_golomb_bits(std::uint32_t value);
+/// Number of bits of a value, which is 0 for 0, 1 for 1, 2 for 2 and 3, 3 for 4 to 7, and so on.
+int bit_length(std::uint32_t value) noexcept;
 
-/// Rice code with parameter k: the quotient value >> k in unary, then the k lowest bits. Quotients
-/// of kRiceEscape or more switch to an Exponential-Golomb code, so no code word can get extremely
-/// long even if one value is far above the others. Throws std::invalid_argument if k is not in
-/// 0 to kMaxRiceParameter.
-void write_rice(BitWriter& writer, std::uint32_t value, int k);
-std::uint32_t read_rice(BitReader& reader, int k);
-int rice_bits(std::uint32_t value, int k);
+/// Adaptive probabilities for unsigned integers of any size. A value is coded by its bit length as
+/// a series of decisions, followed by the bits below its leading one. The first of these is
+/// adaptive as well, and the others are close enough to random to be coded directly.
+struct AdaptiveValue {
+    static constexpr std::size_t kModels = 16;
+    std::array<AdaptiveBit, kModels> length{};
+    std::array<AdaptiveBit, kModels> first_bit{};
+};
 
-/// Length of the unary part from which the Exponential-Golomb escape takes over.
-inline constexpr std::uint32_t kRiceEscape = 24;
+void encode_value(RangeEncoder& encoder, AdaptiveValue& model, std::uint32_t value);
+
+/// Any input gives a value below 2^32, since the bit length ends at 32.
+std::uint32_t decode_value(RangeDecoder& decoder, AdaptiveValue& model) noexcept;
 
 }  // namespace codec

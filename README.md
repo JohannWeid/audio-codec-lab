@@ -7,22 +7,21 @@ coding, tested on Windows, Linux and macOS and evaluated with a MUSHRA-style lis
 learning project about the principles of perceptual coding, not a competitor to AAC or Opus.
 
 **Status: work in progress.** The encoder and decoder work end to end, from WAV to bitstream and
-back, and a psychoacoustic model shapes the quantization noise. Measured against the model's own
-thresholds, this helps with enough bits, about 96 kbit/s for broadband signals. Below that, the
-placeholder entropy coder still makes it worse than flat noise for such signals. Nobody has listened
-to it in a test yet, so there are no listening results to show. Reference bitstreams decode to
-identical PCM on Linux, Windows and macOS, on x86-64 and ARM (see
+back. A psychoacoustic model shapes the quantization noise, and an adaptive range coder codes the
+result. On synthetic test signals from 32 kbit/s on, less noise lies above the model's own thresholds
+than with flat noise. Nobody has listened to it in a test yet, so there are no listening results to
+show. Reference bitstreams decode to identical PCM on Linux, Windows and macOS, on x86-64 and ARM (see
 [tests/conformance](tests/conformance/README.md)).
 
 | Phase | Content | Status |
 |---|---|---|
 | 1 | Specification | in progress |
-| 2 | Core: WAV, MDCT, quantization, bitstream, encoder and decoder without psychoacoustics | done, with Rice codes as a placeholder |
-| 3 | Psychoacoustic model, bit allocation with rate loop, better entropy coding | in progress: model and bit allocation done, entropy coding open |
+| 2 | Core: WAV, MDCT, quantization, bitstream, encoder and decoder without psychoacoustics | done |
+| 3 | Psychoacoustic model, bit allocation with rate loop, better entropy coding | done, not yet tested by ear |
 | 4 | Test levels: unit, roundtrip, conformance, end-to-end, damaged input | done for the current code, grows with phase 3 |
 | 5 | Evaluation: objective metrics and a MUSHRA-style listening test | planned |
 
-## Method (planned)
+## Method
 
 ```text
 Encoder

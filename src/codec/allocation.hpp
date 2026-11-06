@@ -27,24 +27,28 @@ BandValues band_noise(const std::vector<Sample>& coefficients, const FrameData& 
 /// below their threshold count as 0. Each band covers about one Bark, so they all count the same.
 Sample mean_excess_db(const BandValues& noise, const BandValues& thresholds);
 
+/// One coded frame, and the state of the coder after it, which the next frame continues from.
 struct EncodedFrame {
     FrameData frame;
     std::vector<std::uint8_t> payload;
+    FrameCoderState state;
 };
 
 /// The inner loop: the smallest gain whose payload fits, for fixed scalefactors. If not even the
 /// highest gain fits, the frame stays empty, which always fits the smallest allowed bitrate.
 EncodedFrame encode_with_scalefactors(const std::vector<Sample>& coefficients,
                                       const Scalefactors& scalefactors,
-                                      std::size_t max_payload_bytes);
+                                      std::size_t max_payload_bytes, const FrameCoderState& state);
 
 /// Flat noise allocation, the baseline in section 7 of spec/codec-spec.md.
-EncodedFrame encode_flat(const std::vector<Sample>& coefficients, std::size_t max_payload_bytes);
+EncodedFrame encode_flat(const std::vector<Sample>& coefficients, std::size_t max_payload_bytes,
+                         const FrameCoderState& state);
 
-/// Noise allocation by the masking thresholds, with the outer loop in section 6 of
-/// spec/codec-spec.md. The outer loop stops as soon as it no longer lowers mean_excess_db(). Bands
-/// below the threshold in quiet stay empty.
+/// Noise allocation by the masking thresholds, as described in section 6 of spec/codec-spec.md.
+/// Bands below the threshold in quiet stay empty, and so do the bands above the bandwidth that the
+/// budget can afford.
 EncodedFrame encode_perceptual(const std::vector<Sample>& coefficients,
-                               const MaskingAnalysis& analysis, std::size_t max_payload_bytes);
+                               const MaskingAnalysis& analysis, std::size_t max_payload_bytes,
+                               const FrameCoderState& state);
 
 }  // namespace codec

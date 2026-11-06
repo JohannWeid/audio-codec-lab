@@ -18,11 +18,11 @@ namespace {
 
 using codec::band_noise;
 using codec::BandValues;
-using codec::BitWriter;
 using codec::encode_flat;
 using codec::encode_perceptual;
 using codec::encode_with_scalefactors;
 using codec::EncodedFrame;
+using codec::FrameCoderState;
 using codec::FrameData;
 using codec::kBandCount;
 using codec::kBandEdges;
@@ -69,10 +69,12 @@ Measurement measure(const std::vector<Sample>& signal, EncodeFrame encode_frame)
     Sample signal_energy = 0;
     Sample noise_energy = 0;
     Sample counted = 0;
+    FrameCoderState state;
     for (std::size_t i = 0; i < blocks.size(); ++i) {
         const std::vector<Sample> coefficients = mdct.forward(blocks[i]);
         const MaskingAnalysis analysis = model.analyze(blocks[i]);
-        const EncodedFrame encoded = encode_frame(coefficients, analysis);
+        const EncodedFrame encoded = encode_frame(coefficients, analysis, state);
+        state = encoded.state;
         result.largest_payload = std::max(result.largest_payload, encoded.payload.size());
         // Only the frames in the middle count: the abrupt start and end of a test signal would
         // dominate the result in a signal of this length.
@@ -93,26 +95,18 @@ Measurement measure(const std::vector<Sample>& signal, EncodeFrame encode_frame)
 }
 
 Measurement measure_flat(const std::vector<Sample>& signal, std::size_t max_bytes) {
-    return measure(signal,
-                   [max_bytes](const std::vector<Sample>& coefficients, const MaskingAnalysis&) {
-                       return encode_flat(coefficients, max_bytes);
-                   });
+    return measure(signal, [max_bytes](const std::vector<Sample>& coefficients,
+                                       const MaskingAnalysis&, const FrameCoderState& state) {
+        return encode_flat(coefficients, max_bytes, state);
+    });
 }
 
 Measurement measure_perceptual(const std::vector<Sample>& signal, std::size_t max_bytes) {
-    return measure(signal, [max_bytes](const std::vector<Sample>& coefficients,
-                                       const MaskingAnalysis& analysis) {
-        return encode_perceptual(coefficients, analysis, max_bytes);
-    });
-}
-
-// Without the outer loop: only the scalefactors computed from the thresholds.
-Measurement measure_without_outer_loop(const std::vector<Sample>& signal, std::size_t max_bytes) {
-    return measure(signal, [max_bytes](const std::vector<Sample>& coefficients,
-                                       const MaskingAnalysis& analysis) {
-        return encode_with_scalefactors(
-            coefficients, scalefactors_for_thresholds(analysis.masking_threshold), max_bytes);
-    });
+    return measure(signal,
+                   [max_bytes](const std::vector<Sample>& coefficients,
+                               const MaskingAnalysis& analysis, const FrameCoderState& state) {
+                       return encode_perceptual(coefficients, analysis, max_bytes, state);
+                   });
 }
 
 BandValues equal_values(Sample value) {
@@ -192,19 +186,19 @@ TEST(MeanExcess, CountsOnlyBandsAboveTheirThreshold) {
 TEST(InnerLoop, FindsTheSmallestGainThatFits) {
     const std::vector<Sample> coefficients = test::random_signal(kFrameLength, 63);
     const std::size_t max_bytes = 200;
-    const EncodedFrame result = encode_flat(coefficients, max_bytes);
+    const EncodedFrame result = encode_flat(coefficients, max_bytes, FrameCoderState{});
     EXPECT_LE(result.payload.size(), max_bytes);
     ASSERT_GT(result.frame.gain, 0);
 
-    BitWriter finer;
-    codec::write_frame_payload(
-        codec::quantize_frame(coefficients, result.frame.gain - 1, Scalefactors{}), finer);
-    EXPECT_GT(finer.bytes().size(), max_bytes);
+    FrameCoderState state;
+    const std::vector<std::uint8_t> finer = codec::encode_frame_payload(
+        codec::quantize_frame(coefficients, result.frame.gain - 1, Scalefactors{}), state);
+    EXPECT_GT(finer.size(), max_bytes);
 }
 
 TEST(InnerLoop, UsesTheFinestStepIfEverythingFits) {
     const std::vector<Sample> coefficients(kFrameLength);
-    EXPECT_EQ(encode_flat(coefficients, 100).frame.gain, 0);
+    EXPECT_EQ(encode_flat(coefficients, 100, FrameCoderState{}).frame.gain, 0);
 }
 
 // With very fine scalefactors, not even the highest gain empties the frame.
@@ -212,8 +206,9 @@ TEST(InnerLoop, FallsBackToAnEmptyFrameIfNothingElseFits) {
     Scalefactors finest{};
     finest.fill(kMaxScalefactor);
     const std::vector<Sample> coefficients(kFrameLength, 10.0);
-    const EncodedFrame result = encode_with_scalefactors(coefficients, finest, 5);
-    EXPECT_EQ(result.payload.size(), 5u);
+    const EncodedFrame result =
+        encode_with_scalefactors(coefficients, finest, 5, FrameCoderState{});
+    EXPECT_LE(result.payload.size(), 5u);
     for (const std::int32_t value : result.frame.quantized) {
         EXPECT_EQ(value, 0);
     }
@@ -236,20 +231,20 @@ TEST(EncodePerceptual, LeavesInaudibleBandsEmptyEvenWithALargeBudget) {
     MaskingAnalysis analysis;
     analysis.masking_threshold = equal_values(1e-3);
     analysis.quiet_threshold = equal_values(1e-3);
-    const EncodedFrame result = encode_perceptual(coefficients, analysis, 1000);
+    const EncodedFrame result = encode_perceptual(coefficients, analysis, 1000, FrameCoderState{});
 
     EXPECT_NE(result.frame.quantized[100], 0);
     for (std::size_t k = 500; k < 600; ++k) {
         EXPECT_EQ(result.frame.quantized[k], 0);
     }
     // The flat allocation has no thresholds and spends its bits on the weak content as well.
-    const EncodedFrame flat = encode_flat(coefficients, 1000);
+    const EncodedFrame flat = encode_flat(coefficients, 1000, FrameCoderState{});
     EXPECT_NE(flat.frame.quantized[550], 0);
 }
 
-// A band that is only masked by the rest of the signal is part of that signal. It stays out while
-// bits are short, but is coded if the budget allows it. Otherwise the quality of a tone would stop
-// rising at some point, whatever the bitrate, because the skirts of its spectrum would be missing.
+// A band that is only masked by the rest of the signal is part of that signal, so it is coded if
+// the budget allows it. Otherwise the quality of a tone would stop rising at some point, whatever
+// the bitrate, because the skirts of its spectrum would be missing.
 TEST(EncodePerceptual, CodesMaskedBandsIfTheBudgetAllowsIt) {
     std::vector<Sample> coefficients(kFrameLength);
     coefficients[100] = 2.0;
@@ -260,12 +255,9 @@ TEST(EncodePerceptual, CodesMaskedBandsIfTheBudgetAllowsIt) {
     analysis.masking_threshold = equal_values(1e-2);
     analysis.quiet_threshold = equal_values(1e-6);
 
-    const EncodedFrame large_budget = encode_perceptual(coefficients, analysis, 1000);
-    EXPECT_NE(large_budget.frame.quantized[550], 0);
-
-    const EncodedFrame small_budget = encode_perceptual(coefficients, analysis, 20);
-    EXPECT_NE(small_budget.frame.quantized[100], 0);
-    EXPECT_EQ(small_budget.frame.quantized[550], 0);
+    const EncodedFrame result = encode_perceptual(coefficients, analysis, 1000, FrameCoderState{});
+    EXPECT_NE(result.frame.quantized[100], 0);
+    EXPECT_NE(result.frame.quantized[550], 0);
 }
 
 // A tone is the easy case: it fits below its thresholds even at a low bitrate, with the bits going
@@ -289,11 +281,10 @@ TEST(EncodePerceptual, ATonesNoiseStaysBelowItsThresholdAtALowBitrate) {
     EXPECT_GT(at_96k.snr_db, 55);
 }
 
-// Records a known weakness, so that a better entropy coder shows up here as a failing test that can
-// then be turned around. With noise in all bands, all of them reach the limit of one bit per
-// coefficient at once and become empty together, so at a low bitrate the model does worse than flat
-// noise.
-TEST(EncodePerceptual, IsWorseThanFlatNoiseForBroadbandSignalsAtALowBitrate) {
+// With noise in all bands, too few bits spread evenly over the whole spectrum would serve no band
+// properly. This is what the limit on the bandwidth is for. Before it, and with Rice codes before
+// the range coder, the model did clearly worse than flat noise here.
+TEST(EncodePerceptual, BeatsFlatNoiseForBroadbandSignalsAtALowBitrate) {
     const std::vector<Sample> white = test::random_signal(24 * kFrameLength, 64);
     std::vector<Sample> colored(white.size());
     Sample state = 0;
@@ -306,7 +297,31 @@ TEST(EncodePerceptual, IsWorseThanFlatNoiseForBroadbandSignalsAtALowBitrate) {
     std::cout << "[allocation] colored noise at 83 bytes per frame: flat excess "
               << flat.mean_excess << " dB, SNR " << flat.snr_db << " dB; perceptual excess "
               << perceptual.mean_excess << " dB, SNR " << perceptual.snr_db << " dB\n";
-    EXPECT_GT(perceptual.mean_excess, flat.mean_excess);
+    EXPECT_LT(perceptual.mean_excess, flat.mean_excess);
+}
+
+TEST(EncodePerceptual, LimitsTheBandwidthAtALowBitrate) {
+    const std::vector<Sample> coefficients = test::random_signal(kFrameLength, 65);
+    MaskingAnalysis analysis;
+    analysis.masking_threshold = equal_values(1e-6);
+    analysis.quiet_threshold = equal_values(1e-9);
+
+    const auto highest_coded = [&](std::size_t max_bytes) {
+        const EncodedFrame result =
+            encode_perceptual(coefficients, analysis, max_bytes, FrameCoderState{});
+        std::size_t highest = 0;
+        for (std::size_t k = 0; k < kFrameLength; ++k) {
+            if (result.frame.quantized[k] != 0) {
+                highest = k;
+            }
+        }
+        return highest;
+    };
+    // 83 bytes are 664 bits, which at 1.75 bits per coefficient afford the bands up to coefficient
+    // 379, so the last complete band ends at edge 325.
+    EXPECT_LT(highest_coded(83), 325u);
+    // 254 bytes afford all coefficients, so nothing is cut off.
+    EXPECT_GE(highest_coded(254), 658u);
 }
 
 TEST(EncodePerceptual, NeverExceedsTheBudget) {
@@ -318,12 +333,10 @@ TEST(EncodePerceptual, NeverExceedsTheBudget) {
 }
 
 // The purpose of the model: at the same bitrate, less noise lies above what the ear can hear, even
-// though the SNR falls, as section 7 of the specification expects. This holds from about 48 kbit/s
-// on. At 32 kbit/s, the Rice code leaves too few bits for the model to have an effect; a better
-// entropy coder should allow this test to include 83 bytes per frame.
+// though the SNR falls, as section 7 of the specification expects.
 TEST(EncodePerceptual, KeepsMoreNoiseBelowTheThresholdsThanFlatNoise) {
     const std::vector<Sample> signal = music_like(48 * kFrameLength);
-    for (const std::size_t max_bytes : {std::size_t{124}, std::size_t{168}}) {
+    for (const std::size_t max_bytes : {std::size_t{83}, std::size_t{124}, std::size_t{168}}) {
         SCOPED_TRACE(max_bytes);
         const Measurement flat = measure_flat(signal, max_bytes);
         const Measurement perceptual = measure_perceptual(signal, max_bytes);
@@ -332,26 +345,5 @@ TEST(EncodePerceptual, KeepsMoreNoiseBelowTheThresholdsThanFlatNoise) {
                   << perceptual.mean_excess << " dB, SNR " << perceptual.snr_db << " dB\n";
         EXPECT_LT(perceptual.mean_excess, flat.mean_excess);
         EXPECT_LT(perceptual.snr_db, flat.snr_db);
-    }
-}
-
-// Where the budget is just about enough, the outer loop removes the rest of the noise above the
-// thresholds. A loop that works in the wrong direction would stop at once and change nothing.
-TEST(EncodePerceptual, OuterLoopLowersTheExcessWhereTheBudgetIsJustEnough) {
-    const std::vector<Sample> signal = music_like(24 * kFrameLength);
-    const Sample with_loop = measure_perceptual(signal, 168).mean_excess;
-    const Sample without_loop = measure_without_outer_loop(signal, 168).mean_excess;
-    EXPECT_LT(with_loop, 0.5 * without_loop);
-}
-
-TEST(EncodePerceptual, OuterLoopDoesNotMakeThingsWorse) {
-    const std::vector<Sample> signal = music_like(24 * kFrameLength);
-    for (const std::size_t max_bytes : {std::size_t{40}, std::size_t{83}, std::size_t{168}}) {
-        SCOPED_TRACE(max_bytes);
-        const Sample with_loop = measure_perceptual(signal, max_bytes).mean_excess;
-        const Sample without_loop = measure_without_outer_loop(signal, max_bytes).mean_excess;
-        std::cout << "[allocation] " << max_bytes << " bytes per frame: excess without outer loop "
-                  << without_loop << " dB, with outer loop " << with_loop << " dB\n";
-        EXPECT_LE(with_loop, without_loop);
     }
 }

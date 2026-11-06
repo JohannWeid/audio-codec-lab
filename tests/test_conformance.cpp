@@ -32,9 +32,9 @@ const struct Reference {
     bool psychoacoustics;
     std::uint64_t integer_hash;
 } kReferences[] = {
-    {"ref_32k", 32000, false, 0x7A5D27778AC6445Du},
-    {"ref_64k", 64000, false, 0x3EEB90D2AF8BAB31u},
-    {"ref_psy_64k", 64000, true, 0xF5D74F03DFAAA85Bu},
+    {"ref_32k", 32000, false, 0x3506FDC637C89CA4u},
+    {"ref_64k", 64000, false, 0x8E0E143E82AEFEEDu},
+    {"ref_psy_64k", 64000, true, 0x2D69AF2C74737276u},
 };
 
 std::filesystem::path data_path(const std::string& file) {

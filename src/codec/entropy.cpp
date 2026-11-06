@@ -1,29 +1,13 @@
 #include "codec/entropy.hpp"
 
-#include <limits>
-#include <stdexcept>
-
 namespace codec {
 namespace {
 
-constexpr std::uint32_t kMaxExpGolomb = std::numeric_limits<std::uint32_t>::max() - 1;
-constexpr int kMaxExpGolombPrefix = 31;
+constexpr int kMaxBitLength = 32;
 
-void check_rice_parameter(int k) {
-    if (k < 0 || k > kMaxRiceParameter) {
-        throw std::invalid_argument("the Rice parameter must be in 0 to 31");
-    }
-}
-
-// Number of bits of value + 1, which is at least 1.
-int code_length(std::uint32_t value) noexcept {
-    std::uint64_t remaining = std::uint64_t{value} + 1;
-    int length = 0;
-    while (remaining != 0) {
-        remaining >>= 1;
-        ++length;
-    }
-    return length;
+std::size_t model_index(int position) noexcept {
+    const auto index = static_cast<std::size_t>(position);
+    return index < AdaptiveValue::kModels ? index : AdaptiveValue::kModels - 1;
 }
 
 }  // namespace
@@ -40,77 +24,44 @@ std::int32_t zigzag_decode(std::uint32_t value) noexcept {
     return (value & 1u) != 0 ? -1 - half : half;
 }
 
-void write_exp_golomb(BitWriter& writer, std::uint32_t value) {
-    if (value > kMaxExpGolomb) {
-        throw std::invalid_argument("the value is too large for the Exponential-Golomb code");
+int bit_length(std::uint32_t value) noexcept {
+    int length = 0;
+    while (value != 0) {
+        value >>= 1;
+        ++length;
     }
-    const int length = code_length(value);
-    writer.write_bits(0, length - 1);
-    writer.write_bits(value + 1, length);
+    return length;
 }
 
-std::uint32_t read_exp_golomb(BitReader& reader) {
-    int prefix = 0;
-    while (!reader.read_bit()) {
-        ++prefix;
-        if (prefix > kMaxExpGolombPrefix) {
-            throw BitstreamError("an Exponential-Golomb code has too many leading zeros");
-        }
+void encode_value(RangeEncoder& encoder, AdaptiveValue& model, std::uint32_t value) {
+    const int length = bit_length(value);
+    for (int i = 0; i < length; ++i) {
+        encoder.encode(model.length[model_index(i)], true);
     }
-    // With at most 31 leading zeros the code is below 2^32, so the result always fits.
-    const std::uint64_t coded = (std::uint64_t{1} << prefix) | reader.read_bits(prefix);
-    return static_cast<std::uint32_t>(coded - 1);
+    if (length < kMaxBitLength) {
+        encoder.encode(model.length[model_index(length)], false);
+    }
+    if (length >= 2) {
+        const bool first = ((value >> (length - 2)) & 1u) != 0;
+        encoder.encode(model.first_bit[model_index(length)], first);
+        encoder.encode_direct(value & ((std::uint32_t{1} << (length - 2)) - 1), length - 2);
+    }
 }
 
-int exp_golomb_bits(std::uint32_t value) {
-    if (value > kMaxExpGolomb) {
-        throw std::invalid_argument("the value is too large for the Exponential-Golomb code");
+std::uint32_t decode_value(RangeDecoder& decoder, AdaptiveValue& model) noexcept {
+    int length = 0;
+    while (length < kMaxBitLength && decoder.decode(model.length[model_index(length)])) {
+        ++length;
     }
-    return 2 * code_length(value) - 1;
-}
-
-void write_rice(BitWriter& writer, std::uint32_t value, int k) {
-    check_rice_parameter(k);
-    const std::uint32_t quotient = value >> k;
-    if (quotient < kRiceEscape) {
-        for (std::uint32_t i = 0; i < quotient; ++i) {
-            writer.write_bit(true);
-        }
-        writer.write_bit(false);
-    } else {
-        for (std::uint32_t i = 0; i < kRiceEscape; ++i) {
-            writer.write_bit(true);
-        }
-        write_exp_golomb(writer, quotient - kRiceEscape);
+    if (length < 2) {
+        return static_cast<std::uint32_t>(length);
     }
-    const std::uint64_t low_mask = (std::uint64_t{1} << k) - 1;
-    writer.write_bits(static_cast<std::uint32_t>(value & low_mask), k);
-}
-
-std::uint32_t read_rice(BitReader& reader, int k) {
-    check_rice_parameter(k);
-    std::uint64_t quotient = 0;
-    while (quotient < kRiceEscape && reader.read_bit()) {
-        ++quotient;
+    std::uint32_t value = 1;
+    value = (value << 1) | (decoder.decode(model.first_bit[model_index(length)]) ? 1u : 0u);
+    if (length > 2) {
+        value = (value << (length - 2)) | decoder.decode_direct(length - 2);
     }
-    if (quotient == kRiceEscape) {
-        quotient += read_exp_golomb(reader);
-    }
-    // A damaged code can describe more than 32 bits, in the unary part as well if k is large.
-    if (quotient > (std::numeric_limits<std::uint32_t>::max() >> k)) {
-        throw BitstreamError("a Rice code is out of range");
-    }
-    const std::uint32_t low_bits = reader.read_bits(k);
-    return static_cast<std::uint32_t>((quotient << k) | low_bits);
-}
-
-int rice_bits(std::uint32_t value, int k) {
-    check_rice_parameter(k);
-    const std::uint32_t quotient = value >> k;
-    const int prefix = quotient < kRiceEscape ? static_cast<int>(quotient) + 1
-                                              : static_cast<int>(kRiceEscape) +
-                                                    exp_golomb_bits(quotient - kRiceEscape);
-    return prefix + k;
+    return value;
 }
 
 }  // namespace codec

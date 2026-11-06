@@ -55,41 +55,60 @@ Header:
 The decoder rejects any other sample rate, channel count or frame length.
 
 Each frame starts with its payload length in bytes as a 2-byte field, followed by the payload. The
-payload ends at a byte boundary, with zero bits as padding:
+payload is one run of a binary range coder, in this order:
 
-| Field | Size | Meaning |
+| Field | How it is coded | Meaning |
 |---|---|---|
-| gain | 8 bits | See section 6 |
+| frame empty | Fixed probability of 1/16 | 1 if every coefficient is zero; the frame then ends here and keeps the gain and scalefactors of the frame before |
+| gain change | Adaptive value, zigzag | Relative to the frame before, which starts at 144 |
 | for each of the 25 bands: | | |
-| empty flag | 1 bit | 1 if every coefficient of the band is zero; the band then ends here |
-| scalefactor difference | Exponential-Golomb, zigzag | Relative to the last transmitted scalefactor, starting at 0 |
-| Rice parameter difference | Exponential-Golomb, zigzag | Relative to the last transmitted parameter, starting at 0; the result is in 0 to 24 |
-| coefficients | Rice, zigzag | All coefficients of the band |
+| band empty | Adaptive bit | 1 if every coefficient of the band is zero; the band then ends here |
+| scalefactor change | Adaptive value, zigzag | Relative to the same band in the frame before, which starts at 0 |
+| coefficients | Adaptive value for the magnitude, one direct bit for the sign if it is not 0 | All coefficients of the band |
 
-A frame without any nonzero coefficient takes 7 bytes. The encoder chooses the Rice parameter of a
-band that gives the fewest bits.
+**Range coder:** in the style of the one in LZMA, with a range of 32 bits and probabilities of 12
+bits. The first byte, which is always 0, is left out. At the end, the coder picks the value in its
+final range with the most trailing zero bytes and leaves those out, since the decoder reads zeros
+past the end. So a payload never ends with a zero byte. A range coder can spend far less than one bit
+on a likely decision and needs no tables trained on audio. It uses only integers, so it is bit-exact
+on every platform.
 
-**Limit of the Rice code:** every band that is not empty costs at least one bit per coefficient, so
-below about one bit per sample a dense signal is reduced to its strongest parts. In a measurement
-with white noise, the SNR stays near 0 dB up to 48 kbit/s and reaches 2 dB at 64 kbit/s. Tonal
-signals are hardly affected. This is the main reason to replace the Rice code in phase 3.
+**Adaptive bit:** the probability is the mean of two estimates of 16 bits, one moving by 1/16 and the
+other by 1/128 of the distance towards each new decision. Encoder and decoder start at 1/2 and keep
+the state from frame to frame, so a frame can only be decoded after all the frames before it.
 
-In a signal of tones and noise bursts at 32 kbit/s, the frames use about 70 bytes, while the empirical
-entropy of the same values per band gives about 16 bytes, not counting any side information. That
-estimate is optimistic, but it shows how much a better entropy coder can gain.
+**Adaptive value:** an unsigned value is coded by its bit length, as a series of adaptive bits. The
+bit below the leading one is an adaptive bit too, and the bits below that are direct bits. There are
+16 adaptive bits for the bit length and 16 for that one bit, chosen by position.
 
-**Rice code with parameter k:** the quotient `value >> k` in unary as ones with a closing zero, then
-the k lowest bits. Quotients of 24 or more are written as 24 ones without a closing zero, followed
-by an Exponential-Golomb code of order 0 for `quotient - 24`, and then the k lowest bits. One value
-far above the others in its band therefore cannot produce an extremely long code. Signed values go
-through a zigzag mapping first: 0, -1, 1, -2, 2 become 0, 1, 2, 3, 4.
+**Which adaptive value a coefficient uses:** one of 14, chosen by the bit lengths of its neighbors:
+`2 * a + b + 2 * c + d + e`, where a and b are the two coefficients below it in this frame, and c, d
+and e are the same coefficient and its two neighbors in the frame before. The bit lengths from the
+frame before are corrected for a change of the step: 1 for every 8 units, rounded towards 0, with a
+bit length of 0 staying 0. The sum selects a class with these upper limits: 0, 1, 2, 3, 4, 6, 8, 11,
+15, 20, 27, 36, 50, and one class above that.
+
+**Band empty flags** use one of 4 adaptive bits per band, chosen by whether the band was empty in the
+frame before and whether the band below it is empty in this frame. **Scalefactor changes** use one of
+2 adaptive values, chosen by whether the last change in this frame was 0. Signed values go through a
+zigzag mapping: 0, -1, 1, -2, 2 become 0, 1, 2, 3, 4.
+
+**Why a range coder and not Huffman codes:** the Rice codes of the first version needed at least one
+bit per coefficient in every band that was not empty, so below about one bit per sample, a dense
+signal was reduced to its strongest parts. Huffman codes have the same limit unless they code groups
+of values, and those tables would have to be trained on audio. At the same bitrate, the range coder
+gives a higher SNR with flat noise: 45.5 instead of 42.9 dB for harmonic tones at 32 kbit/s, 10.0
+instead of 6.8 dB for pink noise at 64 kbit/s, and 4.7 instead of 2.2 dB for white noise at 64 kbit/s.
 
 **Alignment:** the decoder drops the first M output samples and writes exactly `total samples`
 samples, so that its output lines up with the input sample by sample. SNR, ViSQOL and the listening
 test all depend on this.
 
 **Damaged input:** the decoder must never crash or read out of bounds. It rejects a bitstream with a
-wrong magic, an unknown version, an impossible field or a length beyond the end of the data.
+wrong magic, an unknown version, an impossible field, a value out of range, a length beyond the end
+of the data, a payload that ends with a zero byte, or a payload of which it has not read every byte.
+Unlike a checksum, this cannot detect every change: changed bytes inside a payload may simply decode
+to other values.
 
 ## 4. Determinism
 
@@ -153,8 +172,8 @@ the threshold in quiet is only an estimate.
 
 ## 6. Bit allocation
 
-- Outer loop: adjust the scalefactors until the noise is below the masking threshold.
-- Inner loop: adjust the global step size until the frame fits the bit budget.
+- The scalefactors follow directly from the masking thresholds.
+- A rate loop adjusts the gain, and so all steps together, until the frame fits the bit budget.
 
 Allocation sits behind one interface, so that it can be replaced as a whole.
 
@@ -185,13 +204,13 @@ At 32 kbit/s this gives 682, 683, 683 and then repeats; at 48 kbit/s every frame
 budget covers the whole frame including its length field. The file header is not counted. Bitrates
 from 8 to 512 kbit/s are accepted, and bits that a frame leaves unused are lost.
 
-**Inner loop:** a binary search finds the smallest gain whose frame fits the budget, for fixed
+**Rate loop:** a binary search finds the smallest gain whose frame fits the budget, for fixed
 scalefactors. If not even the highest gain fits, the frame stays empty.
 
 **Scalefactors from the masking threshold:** a quantizer with step `s` adds a noise energy of about
 `s^2 / 12` per coefficient, so a band of width `w` can use the step `s = sqrt(12 * threshold / w)`.
 The scalefactor is `-8 * log2(s)`, rounded. At a gain of 144, each band then has about as much noise
-as its threshold allows. The inner loop moves all bands together: a lower gain stays below the
+as its threshold allows. The rate loop moves all bands together: a lower gain stays below the
 thresholds, and a higher one goes above them if the budget requires it.
 
 **Inaudible bands stay empty:** if the whole energy of a band lies below the threshold in quiet, its
@@ -201,43 +220,51 @@ only masked by the rest of the signal stay: their coarse steps remove them if bi
 they are coded if the budget allows it. Dropping those as well would stop the quality of a tone from
 rising at about 31 dB SNR, whatever the bitrate, because the skirts of its spectrum would be missing.
 
-**Outer loop:** after the inner loop, the noise of each band is measured on the coefficients. Each
-band above its threshold gets a scalefactor that is 2 units higher, which is 1.5 dB finer, and the
-inner loop runs again. This repeats up to 8 times and stops as soon as the mean excess no longer
-falls. The mean excess is the amount in dB by which noise lies above the thresholds, averaged over
-all bands, with bands below their threshold counting as 0.
+**Bandwidth:** only the lowest bands that leave at least 1.75 bits per coefficient are coded, and the
+ones above them stay empty. This gives 3.8 kHz at 16 kbit/s, 7.6 kHz at 32 kbit/s, 11.4 kHz at 48
+kbit/s, 15.4 kHz at 64 kbit/s, and the full bandwidth from 96 kbit/s on. Each band counts about the
+same for the ear, but the high ones hold far more coefficients, so with too few bits it is better to
+serve the low bands properly. The value comes from a comparison of 1, 1.25, 1.5, 1.75, 2 and 3 bits
+on tones, harmonic tones, pink noise and white noise. Without this limit, the model does worse than
+flat noise for broadband signals at low bitrates. The bandwidth stays the same from frame to frame,
+which avoids the audible flicker that a limit changing with the signal can cause. It applies to the
+model only, not to the baseline.
 
-In a measurement with tones and noise bursts, the outer loop lowers the mean excess by about 0.02 dB,
-because the computed scalefactors are already close. It stays in the encoder for now, since it may
-matter more with a better entropy coder.
+**Mean excess:** the measure used in this document. It is the amount in dB by which noise lies above
+the thresholds, averaged over all bands, with bands below their threshold counting as 0.
+
+**No outer loop:** classic encoders use a second loop that makes the steps finer in each band that is
+still above its threshold. An earlier version had this, with up to 8 rounds of 1.5 dB each. Across
+budgets of 40 to 168 bytes per frame, it changed the mean excess only once, by 0.001 dB, so it was
+removed. The scalefactors already follow from the thresholds, so there is little left to correct: if
+bits are short, the loop cannot create any, and if they are enough, the noise is below the thresholds
+anyway.
 
 ## 7. Baseline
 
-`--psy off` selects flat noise allocation instead of the masking model: all scalefactors are 0, and
-there is no outer loop. Everything else stays the same: transform, entropy coder and inner loop. The
+`--psy off` selects flat noise allocation instead of the masking model: all scalefactors are 0, with
+no limit on the bandwidth. Everything else stays the same: transform, entropy coder and rate loop. The
 comparison then measures only the psychoacoustic model. The baseline is expected to reach a similar
 or better SNR at the same bitrate and to sound worse, because SNR does not reflect perception.
 
 Measured as the mean excess over the model's own thresholds, flat noise against the model, in dB:
 
-| Signal | 32 kbit/s | 48 kbit/s | 64 kbit/s | 96 kbit/s |
-|---|---|---|---|---|
-| Tone at 1 kHz | 0.07 / 0.00 | 0.06 / 0.00 | 0.01 / 0.00 | 0.00 / 0.00 |
-| Harmonic tones with weak noise | 1.08 / 1.85 | 0.94 / 0.53 | 0.85 / 0.00 | 0.34 / 0.00 |
-| Pink noise | 3.08 / 5.67 | 2.60 / 5.38 | 1.90 / 4.18 | 0.08 / 0.00 |
-| White noise | 6.34 / 6.08 | 6.06 / 5.77 | 4.42 / 4.53 | 0.53 / 0.00 |
+| Signal | 16 kbit/s | 32 kbit/s | 48 kbit/s | 64 kbit/s | 96 kbit/s |
+|---|---|---|---|---|---|
+| Tone at 1 kHz | 0.08 / 0.00 | 0.00 / 0.00 | 0.00 / 0.00 | 0.00 / 0.00 | 0.00 / 0.00 |
+| Harmonic tones with weak noise | 1.10 / 2.20 | 0.86 / 0.65 | 0.60 / 0.22 | 0.37 / 0.00 | 0.02 / 0.00 |
+| Pink noise | 3.15 / 2.80 | 1.87 / 1.01 | 1.03 / 0.48 | 0.52 / 0.25 | 0.04 / 0.00 |
+| White noise | 6.02 / 3.19 | 5.18 / 1.09 | 3.92 / 0.49 | 2.19 / 0.26 | 0.31 / 0.01 |
 
-With enough bits, the model keeps all noise below its thresholds, which flat noise does not. At low
-bitrates it does worse for broadband signals, because of the Rice code: with similar signal-to-mask
-ratios in all bands, all of them reach the limit of one bit per coefficient at once and become empty
-together. Pink noise at 64 kbit/s falls to 1.2 dB SNR that way, against 7.0 dB with flat noise. An
-entropy coder that can spend less than one bit per value should remove this cliff. These values only
-compare against the model itself, so whether it sounds better can only be shown by a listening test.
+From 32 kbit/s on, the model is never worse than flat noise here, and from 96 kbit/s on it keeps
+practically all noise below its thresholds. Below that, a part of the excess is the limited bandwidth.
+At 16 kbit/s,
+the harmonic tones do worse, because the bandwidth of 3.8 kHz removes their tone at 5.3 kHz. The SNR
+falls as expected, for example from 45.5 to 25.2 dB for the harmonic tones at 32 kbit/s. These signals
+are synthetic, and these values only compare against the model itself, so whether it sounds better
+can only be shown by a listening test with real audio.
 
 ## 8. Open questions
 
-- [ ] Final target bitrates, after a short listening check (phase 3)
-- [ ] Coded bandwidth per bitrate: 32 kbit/s is only 0.67 bit per sample, so it may not be able to
-      cover the full 24 kHz (phase 3)
-- [ ] Entropy coder for phase 3: Huffman or adaptive range coder, decided from measurements
+- [ ] Final target bitrates, after a short listening check
 - [ ] Bit reservoir as an optional extension, if strict budgets audibly hurt transients

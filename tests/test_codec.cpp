@@ -149,17 +149,17 @@ TEST(FrameBudget, SumFollowsTheBitrateExactly) {
 }
 
 TEST(Stream, HasTheSpecifiedHeaderAndEmptyFrame) {
-    // No samples still give one frame, without any data: 25 empty bands.
+    // No samples still give one frame, which only says that it is empty.
     // clang-format off
     const Bytes expected = {
-        'A', 'C', 'L', 'B',            // magic
-        1,                             // version
-        0x00, 0x00, 0xBB, 0x80,        // 48000 Hz
-        1,                             // one channel
-        0x04, 0x00,                    // 1024 samples per frame
-        0, 0, 0, 0, 0, 0, 0, 0,        // no samples
-        0x00, 0x05,                    // payload length
-        0x00, 0xFF, 0xFF, 0xFF, 0x80,  // gain 0, 25 ones, padding
+        'A', 'C', 'L', 'B',      // magic
+        2,                       // version
+        0x00, 0x00, 0xBB, 0x80,  // 48000 Hz
+        1,                       // one channel
+        0x04, 0x00,              // 1024 samples per frame
+        0, 0, 0, 0, 0, 0, 0, 0,  // no samples
+        0x00, 0x01,              // payload length
+        0xF0,                    // the range code of the flag "this frame is empty"
     };
     // clang-format on
     EXPECT_EQ(encode_at({}, 64000), expected);
@@ -211,11 +211,9 @@ TEST(Encoder, NeverExceedsTheBudgetOfAFrame) {
     }
 }
 
-// Only from 64 kbit/s on: a Rice code needs at least one bit per coefficient in every band that is
-// not empty, so below about one bit per sample a dense signal cannot use its whole budget.
 TEST(Encoder, UsesMostOfTheBudgetForADenseSignal) {
     const std::size_t size = 16 * kFrameLength;
-    for (const std::uint32_t bitrate : {64000u, 128000u, 256000u}) {
+    for (const std::uint32_t bitrate : {32000u, 64000u, 128000u, 256000u}) {
         SCOPED_TRACE(bitrate);
         const std::vector<std::uint32_t> sizes =
             frame_bits(encode_at(noise(0.5, size, 43), bitrate));
@@ -249,8 +247,8 @@ TEST(Codec, SilenceStaysExactlySilent) {
         SCOPED_TRACE(psychoacoustics);
         const Bytes stream = encode_at(silence, 64000, psychoacoustics);
         EXPECT_EQ(decode(stream).samples, silence);
-        // Every frame holds only its length field and five bytes of payload.
-        EXPECT_EQ(stream.size(), kHeaderSize + codec::frame_count(5000, kFrameLength) * 7);
+        // Every frame holds only its length field and one byte of payload.
+        EXPECT_EQ(stream.size(), kHeaderSize + codec::frame_count(5000, kFrameLength) * 3);
     }
 }
 
@@ -276,18 +274,16 @@ TEST(Codec, QualityGrowsWithTheBitrate) {
     }
 }
 
-// Guards against regressions, with a margin below the values measured with the Rice code. A better
-// entropy coder in phase 3 should raise them.
+// Guards against regressions, with a margin below the measured values, for the flat noise of the
+// baseline.
 TEST(Codec, ReachesExpectedQuality) {
     const std::size_t size = 16 * kFrameLength;
     const Pcm a_tone = tone(1000, 0.5, size);
     const Pcm white = noise(0.5, size, 45);
     const Pcm mixed = mixture(size);
-    EXPECT_GT(middle_snr_db(a_tone, decode(encode_at(a_tone, 64000)).samples), 60);
-    // The tones of this signal are about 27 dB above its noise. The Rice code cannot afford to
-    // transmit that noise at this bitrate, so the SNR stays near this value.
-    EXPECT_GT(middle_snr_db(mixed, decode(encode_at(mixed, 64000)).samples), 25);
-    EXPECT_GT(middle_snr_db(white, decode(encode_at(white, 64000)).samples), 1.5);
+    EXPECT_GT(middle_snr_db(a_tone, decode(encode_at(a_tone, 64000)).samples), 70);
+    EXPECT_GT(middle_snr_db(mixed, decode(encode_at(mixed, 64000)).samples), 28);
+    EXPECT_GT(middle_snr_db(white, decode(encode_at(white, 64000)).samples), 3.5);
     EXPECT_GT(middle_snr_db(white, decode(encode_at(white, 512000)).samples), 45);
 }
 
@@ -324,7 +320,7 @@ TEST(Decoder, RejectsDamagedHeaders) {
     Bytes wrong_magic = valid;
     wrong_magic[0] = 'X';
     Bytes wrong_version = valid;
-    wrong_version[4] = 2;
+    wrong_version[4] = 1;
     Bytes wrong_rate = valid;
     wrong_rate[8] = 0x44;
     Bytes wrong_channels = valid;
@@ -373,12 +369,12 @@ TEST(Decoder, RejectsAFrameLongerThanTheFile) {
 }
 
 TEST(Decoder, RejectsAPayloadWithUnusedData) {
-    // A frame that claims one byte more than its content needs, with the rest of the file behind
-    // it.
+    // A frame that claims more bytes than its content needs. The decoder always looks a few bytes
+    // ahead, so this can only be noticed from a difference of some bytes on.
     Bytes stream = encode_at(Pcm(100), 64000);
     const std::size_t payload = stream[kHeaderSize + 1];
-    stream[kHeaderSize + 1] = static_cast<std::uint8_t>(payload + 1);
-    stream.insert(stream.begin() + static_cast<std::ptrdiff_t>(kHeaderSize + 2 + payload), 0);
+    stream[kHeaderSize + 1] = static_cast<std::uint8_t>(payload + 8);
+    stream.insert(stream.begin() + static_cast<std::ptrdiff_t>(kHeaderSize + 2 + payload), 8, 0xAB);
     EXPECT_THROW(decode(stream), BitstreamError);
 }
 

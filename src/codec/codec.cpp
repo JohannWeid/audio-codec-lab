@@ -13,14 +13,11 @@ namespace codec {
 namespace {
 
 constexpr std::uint32_t kMagic = 0x41434C42;  // "ACLB"
-constexpr std::uint32_t kVersion = 1;
+constexpr std::uint32_t kVersion = 2;
 constexpr std::uint32_t kChannels = 1;
 constexpr std::size_t kHeaderSize = 20;
 constexpr std::size_t kLengthFieldBytes = 2;
 constexpr std::uint32_t kLengthFieldBits = 16;
-
-// An empty frame still has a length field, a gain and one bit for each band, so 7 bytes in total.
-constexpr std::size_t kSmallestFrameBytes = kLengthFieldBytes + 5;
 
 }  // namespace
 
@@ -59,18 +56,20 @@ std::vector<std::uint8_t> encode(const WavAudio& audio, const EncoderOptions& op
     const PsychoacousticModel model;
     const std::vector<std::vector<Sample>> blocks =
         split_into_blocks(pcm_to_samples(audio.samples), kFrameLength);
+    FrameCoderState state;
     for (std::size_t i = 0; i < blocks.size(); ++i) {
         const std::uint32_t budget = frame_budget_bits(i, options.bitrate);
         const std::size_t max_payload_bytes = (budget - kLengthFieldBits) / 8;
         const std::vector<Sample> coefficients = mdct.forward(blocks[i]);
-        const EncodedFrame encoded =
-            options.psychoacoustics
-                ? encode_perceptual(coefficients, model.analyze(blocks[i]), max_payload_bytes)
-                : encode_flat(coefficients, max_payload_bytes);
+        EncodedFrame encoded = options.psychoacoustics
+                                   ? encode_perceptual(coefficients, model.analyze(blocks[i]),
+                                                       max_payload_bytes, state)
+                                   : encode_flat(coefficients, max_payload_bytes, state);
         const std::vector<std::uint8_t>& payload = encoded.payload;
         stream.push_back(static_cast<std::uint8_t>(payload.size() >> 8));
         stream.push_back(static_cast<std::uint8_t>(payload.size() & 0xFFu));
         stream.insert(stream.end(), payload.begin(), payload.end());
+        state = encoded.state;
     }
     return stream;
 }
@@ -102,7 +101,7 @@ ParsedStream parse_stream(const std::vector<std::uint8_t>& bytes) {
     // Checked before computing or allocating anything from a value that may be damaged.
     const std::size_t remaining_bytes = bytes.size() - kHeaderSize;
     const std::uint64_t full_frames = total_samples / kFrameLength;
-    if (full_frames > remaining_bytes / kSmallestFrameBytes) {
+    if (full_frames > remaining_bytes / kLengthFieldBytes) {
         throw BitstreamError("the file is too short for the announced number of samples");
     }
     const std::size_t count = frame_count(static_cast<std::size_t>(total_samples), kFrameLength);
@@ -111,6 +110,7 @@ ParsedStream parse_stream(const std::vector<std::uint8_t>& bytes) {
     stream.total_samples = total_samples;
     stream.frames.reserve(count);
 
+    FrameCoderState state;
     std::size_t position = kHeaderSize;
     for (std::size_t i = 0; i < count; ++i) {
         if (bytes.size() - position < kLengthFieldBytes) {
@@ -122,11 +122,7 @@ ParsedStream parse_stream(const std::vector<std::uint8_t>& bytes) {
         if (payload_size > bytes.size() - position) {
             throw BitstreamError("a frame extends beyond the end of the bitstream");
         }
-        BitReader reader(bytes.data() + position, payload_size);
-        stream.frames.push_back(read_frame_payload(reader));
-        if (reader.bits_remaining() != 0) {
-            throw BitstreamError("a frame holds more data than its content needs");
-        }
+        stream.frames.push_back(decode_frame_payload(bytes.data() + position, payload_size, state));
         position += payload_size;
     }
     if (position != bytes.size()) {

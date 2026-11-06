@@ -50,6 +50,7 @@ add_library(codec
   src/codec/pcm.cpp
   src/codec/psychoacoustics.cpp
   src/codec/quantizer.cpp
+  src/codec/range_coder.cpp
   src/codec/version.cpp
   src/codec/wav.cpp
 )
@@ -90,6 +91,7 @@ add_executable(codec_tests
   tests/test_pcm.cpp
   tests/test_psychoacoustics.cpp
   tests/test_quantizer.cpp
+  tests/test_range_coder.cpp
   tests/test_version.cpp
   tests/test_wav.cpp
 )

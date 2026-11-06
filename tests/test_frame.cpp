@@ -1,16 +1,13 @@
 #include <gtest/gtest.h>
 
-#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <random>
 #include <stdexcept>
-#include <string>
 #include <utility>
 #include <vector>
 
-#include "codec/bitstream.hpp"
 #include "codec/entropy.hpp"
 #include "codec/frame.hpp"
 #include "codec/quantizer.hpp"
@@ -18,146 +15,90 @@
 
 namespace {
 
-using codec::best_rice_parameter;
-using codec::BitReader;
+using Bytes = std::vector<std::uint8_t>;
 using codec::BitstreamError;
-using codec::BitWriter;
+using codec::decode_frame_payload;
 using codec::dequantize_frame;
+using codec::encode_frame_payload;
+using codec::encode_value;
+using codec::FrameCoderState;
 using codec::FrameData;
 using codec::kBandCount;
 using codec::kBandEdges;
 using codec::kFrameLength;
-using codec::kMaxBandRiceParameter;
 using codec::kMaxQuantized;
+using codec::kProbabilityOne;
 using codec::quantize_frame;
-using codec::read_frame_payload;
+using codec::RangeEncoder;
 using codec::Sample;
 using codec::Scalefactors;
-using codec::write_exp_golomb;
-using codec::write_frame_payload;
-using codec::write_rice;
 using codec::zigzag_encode;
 
-std::string bit_text(const std::vector<std::uint8_t>& bytes) {
-    std::string text;
-    for (const std::uint8_t byte : bytes) {
-        for (int bit = 7; bit >= 0; --bit) {
-            text += ((byte >> bit) & 1) != 0 ? '1' : '0';
+// A frame with random content, in which some of the bands stay empty.
+FrameData random_frame(std::mt19937& rng) {
+    FrameData frame;
+    frame.gain = static_cast<int>(rng() % 256);
+    for (std::size_t band = 0; band < kBandCount; ++band) {
+        frame.scalefactors[band] = static_cast<int>(rng() % 256) - 128;
+        const std::uint32_t kind = rng() % 4;
+        if (kind == 0) {
+            continue;
+        }
+        const int bits = kind == 1 ? 2 : (kind == 2 ? 8 : 20);
+        for (std::size_t k = kBandEdges[band]; k < kBandEdges[band + 1]; ++k) {
+            const auto magnitude = static_cast<std::int32_t>(rng() % (1u << bits));
+            frame.quantized[k] = rng() % 2 == 0 ? magnitude : -magnitude;
         }
     }
-    return text;
+    return frame;
 }
 
-std::vector<std::uint8_t> payload_of(const FrameData& frame) {
-    BitWriter writer;
-    write_frame_payload(frame, writer);
-    return writer.bytes();
-}
-
-FrameData roundtrip(const FrameData& frame) {
-    const std::vector<std::uint8_t> bytes = payload_of(frame);
-    BitReader reader(bytes.data(), bytes.size());
-    FrameData back = read_frame_payload(reader);
-    EXPECT_EQ(reader.bits_remaining(), 0u);
-    return back;
-}
-
-// A band has only zeros if all of its coefficients are zero; the decoder then keeps the scalefactor
-// of the band before it.
-Scalefactors transmitted_scalefactors(const FrameData& frame) {
-    Scalefactors expected{};
-    int running = 0;
+// Scalefactors of empty bands are not transmitted, so they keep the value of the frame before.
+Scalefactors transmitted_scalefactors(const FrameData& frame, const Scalefactors& before) {
+    Scalefactors expected = before;
     for (std::size_t band = 0; band < kBandCount; ++band) {
-        bool is_zero = true;
         for (std::size_t k = kBandEdges[band]; k < kBandEdges[band + 1]; ++k) {
-            is_zero = is_zero && frame.quantized[k] == 0;
+            if (frame.quantized[k] != 0) {
+                expected[band] = frame.scalefactors[band];
+                break;
+            }
         }
-        if (!is_zero) {
-            running = frame.scalefactors[band];
-        }
-        expected[band] = running;
     }
     return expected;
 }
 
-// The start of a payload whose first band is not empty, up to where its scalefactor is written.
-BitWriter start_of_nonzero_band() {
-    BitWriter writer;
-    writer.write_bits(0, 8);
-    writer.write_bit(false);
-    return writer;
+// The start of a frame that is not empty, with this gain and a first band that is not empty either.
+// It follows the layout in the specification, so that tests can build damaged frames from it.
+RangeEncoder start_frame(FrameCoderState& state, int gain_change) {
+    RangeEncoder encoder;
+    encoder.encode(kProbabilityOne / 16 * 15, false);
+    encode_value(encoder, state.gain_change, zigzag_encode(gain_change));
+    encoder.encode(state.band_empty[FrameCoderState::empty_flag_context(0, false, false)], false);
+    return encoder;
 }
 
-// Completes a frame with zeros for the rest of the first band and 24 empty bands. Apart from what a
-// test wrote before this, the frame is valid, so only the check under test can reject it. Random
-// data behind the damage would not show this, since the reader would then run out of data anyway.
-std::vector<std::uint8_t> finish_frame(BitWriter writer, int remaining_values, int k) {
-    for (int i = 0; i < remaining_values; ++i) {
-        write_rice(writer, 0, k);
-    }
-    writer.write_bits(0xFFFFFFu, 24);
-    writer.align_to_byte();
-    return writer.bytes();
-}
-
-constexpr int kFirstBandWidth = 4;
-
-void expect_rejected(const std::vector<std::uint8_t>& bytes) {
-    BitReader reader(bytes.data(), bytes.size());
-    EXPECT_THROW(read_frame_payload(reader), BitstreamError);
+void expect_rejected(RangeEncoder encoder) {
+    const Bytes bytes = encoder.finish();
+    FrameCoderState state;
+    EXPECT_THROW(decode_frame_payload(bytes.data(), bytes.size(), state), BitstreamError);
 }
 
 }  // namespace
 
-TEST(FramePayload, HasTheSpecifiedBitLayout) {
-    FrameData frame;
-    frame.gain = 0x12;
-    frame.quantized[0] = 1;
-    frame.quantized[3] = -1;
-    // gain, band 0 is not empty, scalefactor difference 0, parameter difference 0, the four values
-    // 1, 0, 0, -1 with k = 0, 24 empty bands, and the padding up to the byte boundary.
-    const std::string expected =
-        "00010010"
-        "0"
-        "1"
-        "1"
-        "110"
-        "0"
-        "0"
-        "10" +
-        std::string(24, '1') + "000000";
-    EXPECT_EQ(bit_text(payload_of(frame)), expected);
-}
-
-TEST(FramePayload, EmptyFrameTakesFiveBytes) {
-    FrameData frame;
-    frame.gain = 255;
-    const std::string expected = "11111111" + std::string(25, '1') + "0000000";
-    EXPECT_EQ(bit_text(payload_of(frame)), expected);
-}
-
-TEST(FramePayload, RoundtripsVariedContent) {
-    std::mt19937 rng(31);
-    for (int round = 0; round < 200; ++round) {
+TEST(FramePayload, RoundtripsASequenceOfFrames) {
+    std::mt19937 rng(91);
+    FrameCoderState encoder_state;
+    FrameCoderState decoder_state;
+    Scalefactors expected_scalefactors{};
+    for (int round = 0; round < 100; ++round) {
         SCOPED_TRACE(round);
-        FrameData frame;
-        frame.gain = static_cast<int>(rng() % 256);
-        for (std::size_t band = 0; band < kBandCount; ++band) {
-            frame.scalefactors[band] = static_cast<int>(rng() % 256) - 128;
-            const std::uint32_t kind = rng() % 4;
-            if (kind == 0) {
-                continue;  // An empty band.
-            }
-            const int bits = kind == 1 ? 2 : (kind == 2 ? 8 : 20);
-            for (std::size_t k = kBandEdges[band]; k < kBandEdges[band + 1]; ++k) {
-                const auto magnitude = static_cast<std::int32_t>(rng() % (1u << bits));
-                frame.quantized[k] = rng() % 2 == 0 ? magnitude : -magnitude;
-            }
-        }
-        const FrameData back = roundtrip(frame);
-        EXPECT_EQ(back.gain, frame.gain);
-        EXPECT_EQ(back.quantized, frame.quantized);
-        EXPECT_EQ(back.scalefactors, transmitted_scalefactors(frame));
+        const FrameData frame = random_frame(rng);
+        const Bytes bytes = encode_frame_payload(frame, encoder_state);
+        const FrameData back = decode_frame_payload(bytes.data(), bytes.size(), decoder_state);
+        ASSERT_EQ(back.gain, frame.gain);
+        ASSERT_EQ(back.quantized, frame.quantized);
+        expected_scalefactors = transmitted_scalefactors(frame, expected_scalefactors);
+        ASSERT_EQ(back.scalefactors, expected_scalefactors);
     }
 }
 
@@ -168,177 +109,200 @@ TEST(FramePayload, RoundtripsTheLargestValues) {
     frame.quantized[1023] = kMaxQuantized;
     frame.scalefactors.fill(127);
     frame.gain = 255;
-    const FrameData back = roundtrip(frame);
+    FrameCoderState encoder_state;
+    const Bytes bytes = encode_frame_payload(frame, encoder_state);
+    FrameCoderState decoder_state;
+    const FrameData back = decode_frame_payload(bytes.data(), bytes.size(), decoder_state);
     EXPECT_EQ(back.quantized, frame.quantized);
     EXPECT_EQ(back.gain, 255);
 }
 
+// The cost of an empty frame is limited, however much the probabilities have adapted, so that an
+// empty frame fits the budget of the lowest bitrate.
+TEST(FramePayload, EmptyFrameIsAlwaysSmall) {
+    std::mt19937 rng(92);
+    FrameCoderState state;
+    EXPECT_LE(encode_frame_payload(FrameData{}, state).size(), 2u);
+    for (int round = 0; round < 50; ++round) {
+        (void)encode_frame_payload(random_frame(rng), state);
+    }
+    EXPECT_LE(encode_frame_payload(FrameData{}, state).size(), 2u);
+}
+
+TEST(FramePayload, EmptyFrameKeepsGainAndScalefactors) {
+    FrameData first;
+    first.gain = 77;
+    first.scalefactors.fill(-5);
+    first.quantized[10] = 3;
+    FrameCoderState encoder_state;
+    FrameCoderState decoder_state;
+    const Bytes first_bytes = encode_frame_payload(first, encoder_state);
+    (void)decode_frame_payload(first_bytes.data(), first_bytes.size(), decoder_state);
+
+    FrameData empty;
+    empty.gain = 200;  // Not transmitted, since nothing depends on it.
+    const Bytes empty_bytes = encode_frame_payload(empty, encoder_state);
+    const FrameData back =
+        decode_frame_payload(empty_bytes.data(), empty_bytes.size(), decoder_state);
+    EXPECT_EQ(back.gain, 77);
+    EXPECT_EQ(back.scalefactors[0], 0);  // Band 0 was empty, so nothing changed it.
+    EXPECT_EQ(back.scalefactors[2], -5);
+    EXPECT_EQ(encoder_state.previous_gain, decoder_state.previous_gain);
+    EXPECT_EQ(encoder_state.previous_scalefactors, decoder_state.previous_scalefactors);
+}
+
+// The probabilities and the frame before make a repeated frame cheaper.
+TEST(FramePayload, RepeatedFramesGetCheaper) {
+    std::mt19937 rng(93);
+    FrameData frame;
+    frame.gain = 150;
+    for (std::size_t k = 0; k < kFrameLength; k += 5) {
+        frame.quantized[k] = static_cast<std::int32_t>(rng() % 7) - 3;
+    }
+    FrameCoderState state;
+    const std::size_t first = encode_frame_payload(frame, state).size();
+    std::size_t later = 0;
+    for (int round = 0; round < 20; ++round) {
+        later = encode_frame_payload(frame, state).size();
+    }
+    EXPECT_LT(later, first);
+}
+
+// This was the limit of the Rice code: at least one bit per coefficient in every band that is not
+// empty, which is 1024 bits for a frame with one value in each band.
+TEST(FramePayload, SparseFramesCostFarLessThanOneBitPerCoefficient) {
+    std::mt19937 rng(94);
+    FrameCoderState state;
+    std::size_t last = 0;
+    for (int round = 0; round < 30; ++round) {
+        FrameData frame;
+        frame.gain = 150;
+        for (std::size_t band = 0; band < kBandCount; ++band) {
+            const std::size_t width = kBandEdges[band + 1] - kBandEdges[band];
+            frame.quantized[kBandEdges[band] + rng() % width] = rng() % 2 == 0 ? 1 : -1;
+        }
+        last = encode_frame_payload(frame, state).size();
+    }
+    EXPECT_LT(8 * last, 400u);
+}
+
 TEST(FramePayload, WriterRejectsInvalidFrames) {
-    BitWriter writer;
+    FrameCoderState state;
 
     FrameData wrong_size;
     wrong_size.quantized.pop_back();
-    EXPECT_THROW(write_frame_payload(wrong_size, writer), std::invalid_argument);
+    EXPECT_THROW(encode_frame_payload(wrong_size, state), std::invalid_argument);
 
     FrameData wrong_gain;
     wrong_gain.gain = 256;
-    EXPECT_THROW(write_frame_payload(wrong_gain, writer), std::invalid_argument);
+    EXPECT_THROW(encode_frame_payload(wrong_gain, state), std::invalid_argument);
 
     FrameData wrong_scalefactor;
     wrong_scalefactor.scalefactors[3] = 128;
-    EXPECT_THROW(write_frame_payload(wrong_scalefactor, writer), std::invalid_argument);
+    EXPECT_THROW(encode_frame_payload(wrong_scalefactor, state), std::invalid_argument);
 
     FrameData too_large;
     too_large.quantized[5] = kMaxQuantized + 1;
-    EXPECT_THROW(write_frame_payload(too_large, writer), std::invalid_argument);
+    EXPECT_THROW(encode_frame_payload(too_large, state), std::invalid_argument);
 
     FrameData too_small;
     too_small.quantized[5] = -kMaxQuantized - 1;
-    EXPECT_THROW(write_frame_payload(too_small, writer), std::invalid_argument);
+    EXPECT_THROW(encode_frame_payload(too_small, state), std::invalid_argument);
 }
 
-TEST(FramePayload, ReaderRejectsScalefactorOutOfRange) {
-    for (const int value : {128, -129, 100000}) {
-        SCOPED_TRACE(value);
-        BitWriter writer = start_of_nonzero_band();
-        write_exp_golomb(writer, zigzag_encode(value));
-        write_exp_golomb(writer, zigzag_encode(0));
-        expect_rejected(finish_frame(std::move(writer), kFirstBandWidth, 0));
+TEST(FramePayload, ReaderRejectsGainOutOfRange) {
+    // The gain before the first frame is 144.
+    for (const int change : {112, -145, 1000000}) {
+        SCOPED_TRACE(change);
+        FrameCoderState state;
+        RangeEncoder encoder;
+        encoder.encode(kProbabilityOne / 16 * 15, false);
+        encode_value(encoder, state.gain_change, zigzag_encode(change));
+        expect_rejected(std::move(encoder));
     }
 }
 
-TEST(FramePayload, ReaderRejectsRiceParameterOutOfRange) {
-    for (const int value : {-1, kMaxBandRiceParameter + 1, 100000}) {
-        SCOPED_TRACE(value);
-        BitWriter writer = start_of_nonzero_band();
-        write_exp_golomb(writer, zigzag_encode(0));
-        write_exp_golomb(writer, zigzag_encode(value));
-        const int k = value >= 0 && value <= codec::kMaxRiceParameter ? value : 0;
-        expect_rejected(finish_frame(std::move(writer), kFirstBandWidth, k));
+TEST(FramePayload, ReaderRejectsScalefactorOutOfRange) {
+    for (const int change : {128, -129, 1000000}) {
+        SCOPED_TRACE(change);
+        FrameCoderState state;
+        RangeEncoder encoder = start_frame(state, 0);
+        encode_value(encoder, state.scalefactor[0], zigzag_encode(change));
+        expect_rejected(std::move(encoder));
     }
 }
 
 TEST(FramePayload, ReaderRejectsValuesOutOfRange) {
-    BitWriter writer = start_of_nonzero_band();
-    write_exp_golomb(writer, zigzag_encode(0));
-    write_exp_golomb(writer, zigzag_encode(0));
-    write_rice(writer, zigzag_encode(kMaxQuantized) + 1, 0);
-    expect_rejected(finish_frame(std::move(writer), kFirstBandWidth - 1, 0));
+    FrameCoderState state;
+    RangeEncoder encoder = start_frame(state, 0);
+    encode_value(encoder, state.scalefactor[0], zigzag_encode(0));
+    encode_value(encoder, state.coefficient[0], static_cast<std::uint32_t>(kMaxQuantized) + 1);
+    expect_rejected(std::move(encoder));
 }
 
-// Shows that the frames in the three tests above fail because of their one damaged field.
-TEST(FramePayload, ReaderAcceptsTheSameFramesWithValidFields) {
-    for (const int largest_scalefactor : {codec::kMaxScalefactor, codec::kMinScalefactor}) {
-        BitWriter writer = start_of_nonzero_band();
-        write_exp_golomb(writer, zigzag_encode(largest_scalefactor));
-        write_exp_golomb(writer, zigzag_encode(kMaxBandRiceParameter));
-        write_rice(writer, zigzag_encode(kMaxQuantized), kMaxBandRiceParameter);
-        const std::vector<std::uint8_t> bytes =
-            finish_frame(std::move(writer), kFirstBandWidth - 1, kMaxBandRiceParameter);
-
-        BitReader reader(bytes.data(), bytes.size());
-        const FrameData frame = read_frame_payload(reader);
-        EXPECT_EQ(frame.quantized[0], kMaxQuantized);
-        EXPECT_EQ(frame.scalefactors[0], largest_scalefactor);
-        EXPECT_EQ(reader.bits_remaining(), 0u);
+// Shows that the frames in the tests above fail because of their one damaged field. The largest
+// valid values at the same places are accepted and come back.
+TEST(FramePayload, ReaderAcceptsTheLargestValidFields) {
+    for (const int scalefactor : {codec::kMaxScalefactor, codec::kMinScalefactor}) {
+        SCOPED_TRACE(scalefactor);
+        for (const int gain : {codec::kMinGain, codec::kMaxGain}) {
+            FrameData frame;
+            frame.gain = gain;
+            frame.scalefactors[0] = scalefactor;
+            frame.quantized[0] = kMaxQuantized;
+            FrameCoderState encoder_state;
+            const Bytes bytes = encode_frame_payload(frame, encoder_state);
+            FrameCoderState decoder_state;
+            const FrameData back = decode_frame_payload(bytes.data(), bytes.size(), decoder_state);
+            EXPECT_EQ(back.gain, gain);
+            EXPECT_EQ(back.scalefactors[0], scalefactor);
+            EXPECT_EQ(back.quantized[0], kMaxQuantized);
+        }
     }
 }
 
-TEST(FramePayload, ReaderRejectsPaddingThatIsNotZero) {
-    BitWriter writer;
-    writer.write_bits(0, 8);
-    writer.write_bits(0x1FFFFFFu, 25);  // 25 empty bands.
-    writer.write_bits(1, 7);            // The padding of the last byte.
-    BitReader reader(writer.bytes().data(), writer.bytes().size());
-    EXPECT_THROW(read_frame_payload(reader), BitstreamError);
-}
-
-TEST(FramePayload, ReaderRejectsEveryTruncation) {
+TEST(FramePayload, ReaderRejectsAPayloadThatEndsWithZero) {
     FrameData frame;
     frame.quantized[0] = 5;
-    frame.quantized[700] = -9;
-    const std::vector<std::uint8_t> bytes = payload_of(frame);
-    for (std::size_t size = 0; size < bytes.size(); ++size) {
-        SCOPED_TRACE(size);
-        BitReader reader(bytes.data(), size);
-        EXPECT_THROW(read_frame_payload(reader), BitstreamError);
-    }
+    FrameCoderState encoder_state;
+    Bytes bytes = encode_frame_payload(frame, encoder_state);
+    ASSERT_NE(bytes.back(), 0);
+    bytes.push_back(0);
+    FrameCoderState decoder_state;
+    EXPECT_THROW(decode_frame_payload(bytes.data(), bytes.size(), decoder_state), BitstreamError);
 }
 
+TEST(FramePayload, ReaderRejectsMoreDataThanTheContentNeeds) {
+    FrameData frame;
+    frame.quantized[0] = 5;
+    FrameCoderState encoder_state;
+    Bytes bytes = encode_frame_payload(frame, encoder_state);
+    bytes.insert(bytes.end(), 40, 0xAB);
+    FrameCoderState decoder_state;
+    EXPECT_THROW(decode_frame_payload(bytes.data(), bytes.size(), decoder_state), BitstreamError);
+
+    // The same for an empty frame, which takes the short way through the decoder.
+    Bytes empty(40, 0xFF);
+    FrameCoderState empty_state;
+    EXPECT_THROW(decode_frame_payload(empty.data(), empty.size(), empty_state), BitstreamError);
+}
+
+// The sanitizer job in CI turns any read out of bounds or undefined behavior into a failure.
 TEST(FramePayload, RandomDataIsHandled) {
-    std::mt19937 rng(32);
-    std::vector<std::uint8_t> bytes(2000);
-    int accepted = 0;
+    std::mt19937 rng(95);
+    Bytes bytes(600);
     for (int round = 0; round < 3000; ++round) {
         for (std::uint8_t& byte : bytes) {
             byte = static_cast<std::uint8_t>(rng() & 0xFFu);
         }
-        BitReader reader(bytes.data(), bytes.size());
+        FrameCoderState state;
         try {
-            const FrameData frame = read_frame_payload(reader);
+            const FrameData frame = decode_frame_payload(bytes.data(), bytes.size(), state);
             EXPECT_NO_THROW(dequantize_frame(frame));
-            ++accepted;
         } catch (const BitstreamError&) {
             // Rejecting is fine. Any other exception fails the test.
         }
     }
-    RecordProperty("accepted", accepted);
-}
-
-// Because of the escape, the cost can fall again after it has risen. With many zeros and a few very
-// large values, each step of k costs more at first, until the large values drop below the escape.
-// A search that stops at the first rise would miss the true minimum here.
-TEST(BestRiceParameter, FindsTheMinimumBehindARisingCost) {
-    std::vector<std::int32_t> values(12, 0);
-    std::fill(values.begin() + 8, values.end(), 1 << 20);
-    const auto cost = [&values](int k) {
-        std::uint64_t sum = 0;
-        for (const std::int32_t value : values) {
-            sum += static_cast<std::uint64_t>(codec::rice_bits(zigzag_encode(value), k));
-        }
-        return sum;
-    };
-    ASSERT_GT(cost(1), cost(0));  // The precondition: the cost rises right at the start.
-
-    const int chosen = best_rice_parameter(values.data(), values.size());
-    EXPECT_GT(chosen, 1);
-    for (int k = 0; k <= kMaxBandRiceParameter; ++k) {
-        EXPECT_LE(cost(chosen), cost(k));
-    }
-}
-
-TEST(BestRiceParameter, ChoosesTheCheapestParameter) {
-    std::mt19937 rng(33);
-    for (int round = 0; round < 200; ++round) {
-        std::vector<std::int32_t> values(1 + rng() % 200);
-        const int bits = static_cast<int>(rng() % 25);
-        for (std::int32_t& value : values) {
-            const auto magnitude = static_cast<std::int32_t>(rng() % (std::uint32_t{1} << bits));
-            value = rng() % 2 == 0 ? magnitude : -magnitude;
-        }
-        const auto cost = [&values](int k) {
-            std::uint64_t sum = 0;
-            for (const std::int32_t value : values) {
-                sum += static_cast<std::uint64_t>(codec::rice_bits(zigzag_encode(value), k));
-            }
-            return sum;
-        };
-        const int chosen = best_rice_parameter(values.data(), values.size());
-        ASSERT_GE(chosen, 0);
-        ASSERT_LE(chosen, kMaxBandRiceParameter);
-        for (int k = 0; k <= kMaxBandRiceParameter; ++k) {
-            ASSERT_LE(cost(chosen), cost(k));
-        }
-    }
-}
-
-TEST(BestRiceParameter, HandlesSimpleCases) {
-    const std::vector<std::int32_t> zeros(16, 0);
-    EXPECT_EQ(best_rice_parameter(zeros.data(), zeros.size()), 0);
-    EXPECT_EQ(best_rice_parameter(nullptr, 0), 0);
-
-    const std::vector<std::int32_t> large(16, 1 << 20);
-    EXPECT_GE(best_rice_parameter(large.data(), large.size()), 15);
 }
 
 TEST(QuantizeFrame, UsesTheStepOfEachBand) {
@@ -355,8 +319,8 @@ TEST(QuantizeFrame, UsesTheStepOfEachBand) {
 }
 
 TEST(QuantizeFrame, ReconstructionErrorStaysWithinHalfAStep) {
-    std::mt19937 rng(34);
-    const std::vector<Sample> coefficients = test::random_signal(kFrameLength, 35);
+    std::mt19937 rng(96);
+    const std::vector<Sample> coefficients = test::random_signal(kFrameLength, 97);
     Scalefactors scalefactors{};
     for (int& scalefactor : scalefactors) {
         scalefactor = static_cast<int>(rng() % 41) - 20;
