@@ -4,9 +4,10 @@ A MUSHRA test following [ITU-R BS.1534-3](https://www.itu.int/rec/R-REC-BS.1534)
 question of this project: does the codec with its masking model sound better than the same codec with
 flat noise at the same bitrate?
 
-**Status: prepared, not yet carried out.** The scripts are tested, but only with made-up ratings, and
-no real listener has taken this test. The audio has not been fetched yet, and the webMUSHRA setup has
-not been run end to end. There are no results to report.
+**Status: prepared, not yet carried out.** The audio has been fetched and the stimuli work, but the
+analysis has only seen made-up ratings, no real listener has taken this test, and the webMUSHRA setup
+has not been run end to end. There are no results to report. The conditions may still change, because
+the [measurements on these excerpts](../eval/README.md#real-music) question the bandwidth limit.
 
 ## Design
 

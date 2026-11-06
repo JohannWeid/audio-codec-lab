@@ -629,6 +629,14 @@ class WithRealTools(unittest.TestCase):
         self.assertIn("id: trial_clicks", text)
         self.assertIn(f"stimulus: {make_stimuli.AUDIO_FOLDER}/tone/reference.wav", text)
 
+    def test_originals_are_collected_for_the_evaluation(self):
+        folder = self.out / make_stimuli.REFERENCES_FOLDER
+        self.assertEqual(sorted(p.name for p in folder.iterdir()), ["clicks.wav", "tone.wav"])
+        self.assertEqual(
+            (folder / "clicks.wav").read_bytes(),
+            (self.out / "clicks" / "reference.wav").read_bytes(),
+        )
+
     def test_nothing_is_left_of_the_work_folder(self):
         self.assertFalse((self.out / "_work").exists())
 

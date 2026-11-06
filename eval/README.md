@@ -4,9 +4,9 @@ Runs the codec with and without its model, and AAC and Opus through ffmpeg, on a
 measures the results. The numbers and figures in [results](results) come from these scripts.
 
 **What this does not show:** it says nothing certain about how the codec sounds. All measures here are
-computed, on synthetic signals. Real music and a listening test are still missing, and only the
-listening test can answer whether the model is an improvement. So far, the one independent measure
-speaks against it on most of these signals, see [below](#visqol-disagrees).
+computed, and nobody has listened yet, so only the listening test can answer whether the model is an
+improvement. So far, the one independent measure speaks against the model as it stands, mainly because
+of its bandwidth limit, see [real music](#real-music).
 
 ## Run it
 
@@ -41,9 +41,18 @@ CODEC_TOOLS_DIR=build/default python -m unittest discover --start-directory eval
 
 ## Signals
 
-[signals.py](signals.py) generates all of them, so that no licensed audio is needed. Each one stresses
-one thing: a single tone, harmonics with quiet gaps, decaying chords, pink noise, white noise, and
-short bursts that provoke pre-echo. They are stand-ins and do not replace real music.
+[signals.py](signals.py) generates the synthetic ones, so that no licensed audio is needed. Each one
+stresses one thing: a single tone, harmonics with quiet gaps, decaying chords, pink noise, white noise,
+and short bursts that provoke pre-echo. They are stand-ins and do not replace real music.
+
+The real music is the eight excerpts of the [listening test](../listening-test/README.md#audio). These
+commands fetch them and measure them, with ffmpeg and the folder of ViSQOL as above:
+
+```bash
+python listening-test/fetch_items.py
+python listening-test/make_stimuli.py --tools build/default
+python eval/evaluate.py --tools build/default --items listening-test/stimuli/references --out eval/results/music --visqol ~/visqol-build/visqol
+```
 
 ## Measures
 
@@ -75,7 +84,8 @@ what it was trained on.
 
 ## Results
 
-All tables are in [results/results.md](results/results.md). They were generated with ffmpeg 8.0.1. The
+All tables for the synthetic signals are in [results/results.md](results/results.md), and those for real
+music in [results/music/results.md](results/music/results.md). They were generated with ffmpeg 8.0.1. The
 numbers for this codec were identical on another machine in CI. Those for AAC and Opus differed there by
 up to 2.4 dB of SNR, probably because of another version of ffmpeg, so small differences between them
 mean little.
@@ -130,6 +140,43 @@ figures, and these changes are not in the codec.
 Without the limit, the model is still behind flat noise on white noise, by 0.05 to 0.32, on the harmonic
 signal at 16 kbit/s (3.75 against 4.48), and on the chords at 16 kbit/s (4.19 against 4.39). So the two
 causes do not explain everything.
+
+### Real music
+
+![ViSQOL scores of all codecs for eight excerpts](results/music/visqol.png)
+
+On the eight excerpts, the picture is clearer. As it stands, the model is behind flat noise in 32 of the
+40 cases by ViSQOL, while its mean excess is lower from 32 kbit/s on. The column "1 bit" comes from a
+modified copy of the encoder, not from the codec: it allows 1 bit per coded coefficient instead of 1.75,
+which raises the bandwidth at 32 and 48 kbit/s to 15.4 kHz. Removing the limit altogether changes the
+scores no further at these bitrates, apparently because the excerpts lie below the threshold in quiet
+above that frequency.
+
+| kbit/s | ViSQOL: model | 1 bit | Flat noise | AAC | Opus | Excess in dB: model | 1 bit | Flat noise |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 16 | 1.78 | 1.80 | 2.62 | 1.79 | 3.95 | 3.48 | 4.09 | 3.20 |
+| 32 | 2.04 | 3.96 | 3.26 | 3.40 | 4.19 | 1.44 | 2.36 | 1.62 |
+| 48 | 3.25 | 4.14 | 3.74 | 4.28 | 4.43 | 0.55 | 0.74 | 0.86 |
+| 64 | 4.22 | 4.22 | 4.08 | 4.42 | 4.52 | 0.22 | 0.22 | 0.49 |
+| 96 | 4.27 | 4.27 | 4.43 | 4.60 | 4.67 | 0.01 | 0.01 | 0.15 |
+
+All values are means over the excerpts.
+
+- **At 48 kbit/s, the looser limit is ahead of flat noise by ViSQOL and by the mean excess**, on 7 of the
+  8 excerpts by ViSQOL. More bands do lie above the threshold, 31 % against 20 %, but by less on average.
+- **At 32 kbit/s, the measures disagree.** By ViSQOL, the looser limit is well ahead (3.96 against 3.26,
+  7 of 8 excerpts), but 64 % of the bands lie above the threshold, against 33 % with flat noise and 32 %
+  with the present limit. That is the choice between dull and noisy, and it takes listening.
+- **At 16 kbit/s, a limit of 1 bit does not help.** Only far looser settings do: 0.5 bits give 2.85, and
+  removing the limit 3.36, with an excess of 4.70 dB. That may well sound worse than the score suggests.
+- **The glockenspiel stays with flat noise** at every bitrate, for example 4.30 against 4.53 at 32 kbit/s
+  with the looser limit.
+- **At 96 kbit/s, flat noise is ahead** (4.43 against 4.27), though no limit applies. Keeping the bands
+  below the threshold in quiet gives 4.35, so that is a part of the reason, but not all of it.
+- **Opus is ahead of every version of this codec at every bitrate**, and AAC from 48 kbit/s on, which is
+  no surprise for a small codec without block switching, noise filling or a bit reservoir.
+
+The codec still has the old limit. Whether it changes depends on what listening says at 32 kbit/s.
 
 ### Known weaknesses
 

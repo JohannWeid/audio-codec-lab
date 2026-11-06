@@ -352,6 +352,38 @@ class WithRealTools(unittest.TestCase):
         self.assertIn("ViSQOL MOS-LQO", (out / "results.md").read_text(encoding="ascii"))
         self.assertGreater((out / "visqol.png").stat().st_size, 0)
 
+    def test_whole_evaluation_takes_own_items(self):
+        folder = self.work / "own_items"
+        folder.mkdir()
+        signals.write_item(folder / "first.wav", "pink_noise", 1.0)
+        signals.write_item(folder / "second.wav", "harmonic", 1.0)
+        out = self.work / "out_own"
+        subprocess.run(
+            [
+                sys.executable,
+                str(Path(__file__).with_name("evaluate.py")),
+                "--tools",
+                str(self.tools),
+                "--out",
+                str(out),
+                "--items",
+                str(folder),
+                "--bitrates",
+                "48000",
+            ],
+            check=True,
+            capture_output=True,
+        )
+        with open(out / "results.csv", newline="", encoding="ascii") as file:
+            items = {row["item"] for row in csv.DictReader(file)}
+        self.assertEqual(items, {"first", "second"})
+        report = (out / "results.md").read_text(encoding="ascii")
+        self.assertIn(evaluate.OWN_ITEMS_NOTE, report)
+        self.assertNotIn(evaluate.SYNTHETIC_NOTE, report)
+        self.assertGreater((out / "masking_first_48k.png").stat().st_size, 0)
+        self.assertGreater((out / "measures.png").stat().st_size, 0)
+        self.assertFalse((out / "pre_echo_clicks_48k.png").exists())
+
     def test_whole_evaluation_writes_all_results(self):
         out = self.work / "out"
         script = Path(__file__).with_name("evaluate.py")
@@ -388,6 +420,8 @@ class WithRealTools(unittest.TestCase):
 
         self.assertLess(value("model", "mean_excess_db"), value("baseline", "mean_excess_db") / 2)
         self.assertGreater(value("baseline", "snr_db"), value("model", "snr_db"))
+
+        self.assertIn(evaluate.SYNTHETIC_NOTE, (out / "results.md").read_text(encoding="ascii"))
 
         # Without ViSQOL, nothing pretends to come from it.
         self.assertNotIn("visqol_mos", rows[0])

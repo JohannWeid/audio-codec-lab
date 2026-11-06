@@ -31,6 +31,7 @@ FILTER_TAPS = 2047
 MOST_SIGNALS_PER_TRIAL = 12
 AUDIO_FOLDER = "configs/resources/audio_codec_lab"
 TRAINING_CATEGORY = "training"
+REFERENCES_FOLDER = "references"
 
 
 @dataclass(frozen=True)
@@ -337,6 +338,11 @@ def make_stimuli(items: list[Item], tools: Path, source_folder: Path, out: Path)
         report.append({"item": item.name, "gain_db": round(gain_db, 2)})
         print(f"{item.name}: gain {gain_db:+.1f} dB", flush=True)
     shutil.rmtree(work)
+    # All originals in one folder, in the form that eval/evaluate.py --items reads.
+    references = out / REFERENCES_FOLDER
+    references.mkdir(exist_ok=True)
+    for item in trials:
+        shutil.copy(out / item.name / "reference.wav", references / f"{item.name}.wav")
     (out / "mushra.yaml").write_text(configuration(trials, training), encoding="utf-8")
     return report
 

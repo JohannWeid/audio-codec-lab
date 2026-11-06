@@ -12,15 +12,17 @@ result. Reference bitstreams decode to identical PCM on Linux, Windows and macOS
 (see [tests/conformance](tests/conformance/README.md)).
 
 Nobody has listened to it in a test yet, so there are no listening results to show. What exists so
-far are measurements on synthetic signals, which show that the noise goes where the model wants it:
+far are measurements on synthetic signals and real excerpts, which show that the noise goes where the
+model wants it:
 
-![Signal, threshold and noise per band for pink noise at 48 kbit/s](eval/results/masking_pink_noise_48k.png)
+![Signal, threshold and noise per band for jazz at 48 kbit/s](eval/results/music/masking_jazz_48k.png)
 
 This does not show that it sounds better, and the model's own threshold cannot rank it against AAC or
-Opus. The one independent measure so far, ViSQOL, actually prefers flat noise on most of these signals,
-mainly because the model limits the bandwidth at low bitrates. Whether that limit helps or hurts is
-open until someone listens. The [evaluation](eval/README.md) has all measures, what they can and cannot
-say, the causes found so far, and the known weaknesses.
+Opus. The one independent measure so far, ViSQOL, actually prefers flat noise in 32 of 40 cases on real
+excerpts, mainly because the model limits the bandwidth at low bitrates. With a looser limit, the model
+moves ahead of flat noise from 32 to 64 kbit/s, but then more noise lies above its thresholds at 32 kbit/s.
+Whether that trade is worth it is open until someone listens. The [evaluation](eval/README.md) has all
+measures, what they can and cannot say, the causes found so far, and the known weaknesses.
 
 | Phase | Content | Status |
 |---|---|---|

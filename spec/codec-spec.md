@@ -227,8 +227,8 @@ same for the ear, but the high ones hold far more coefficients, so with too few 
 serve the low bands properly. The value comes from a comparison of 1, 1.25, 1.5, 1.75, 2 and 3 bits
 on tones, harmonic tones, pink noise and white noise, by the mean excess alone. Without this limit, the
 model does worse than flat noise by that measure for broadband signals at low bitrates. ViSQOL says the
-opposite: the limit is the main reason why it prefers flat noise, see the
-[evaluation](../eval/README.md#visqol-disagrees). The bandwidth stays the same from frame to frame,
+opposite, also on real excerpts: the limit is the main reason why it prefers flat noise, see the
+[evaluation](../eval/README.md#real-music). The bandwidth stays the same from frame to frame,
 which avoids the audible flicker that a limit changing with the signal can cause. It applies to the
 model only, not to the baseline.
 

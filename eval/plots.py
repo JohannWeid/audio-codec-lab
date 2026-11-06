@@ -151,8 +151,8 @@ def plot_masking(
     plt.close(figure)
 
 
-def plot_measures(path: Path, results: list[dict]) -> None:
-    """Three measures, one column per item, to show that they disagree about the same two encoders."""
+def plot_measures(path: Path, results: list[dict], synthetic: bool = True) -> None:
+    """Three measures, one column per item, to show how they judge the same two encoders."""
     items = list(dict.fromkeys(row["item"] for row in results))
     measures = (
         ("snr_db", "SNR in dB"),
@@ -210,16 +210,17 @@ def plot_measures(path: Path, results: list[dict]) -> None:
     )
     top = headline(
         figure,
-        "The SNR prefers flat noise, the masking threshold prefers the model",
-        "Each column is one synthetic signal. Higher is better for SNR, lower for the excess, "
-        "which favors the model by construction. The SNR rows use a scale per signal.",
+        "The same two encoders by three measures",
+        f"Each column is {'one synthetic signal' if synthetic else 'one excerpt'}. Higher is better "
+        "for SNR, lower for the excess, which favors the model by construction. The SNR rows use "
+        "a scale per column.",
     )
     figure.tight_layout(rect=(0, 0.04, 1, top))
     figure.savefig(path, dpi=150, facecolor=SURFACE)
     plt.close(figure)
 
 
-def plot_visqol(path: Path, results: list[dict]) -> None:
+def plot_visqol(path: Path, results: list[dict], synthetic: bool = True) -> None:
     """The score of ViSQOL over the real bitrate, one panel per item, on one common scale."""
     items = list(dict.fromkeys(row["item"] for row in results))
     codecs = [codec for codec in CODEC_COLORS if any(r["codec"] == codec for r in results)]
@@ -266,8 +267,13 @@ def plot_visqol(path: Path, results: list[dict]) -> None:
     top = headline(
         figure,
         "ViSQOL: one model for all codecs",
-        "Higher is better, at most about 4.75. Each panel is one synthetic signal. ViSQOL was "
-        "trained on real music, so these signals may lie outside of what it knows.",
+        "Higher is better, at most about 4.75. "
+        + (
+            "Each panel is one synthetic signal. ViSQOL was trained on real music, so these signals "
+            "may lie outside of what it knows."
+            if synthetic
+            else "Each panel is one excerpt of a real recording, mixed down to mono."
+        ),
     )
     figure.tight_layout(rect=(0, 0.09, 1, top))
     figure.savefig(path, dpi=150, facecolor=SURFACE)
