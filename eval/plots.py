@@ -22,12 +22,18 @@ SIGNAL_COLOR = "#c3c2b7"
 NOISE_COLOR = "#2a78d6"
 ABOVE_THRESHOLD_COLOR = "#d03b3b"
 
-CODEC_COLORS = {"model": "#2a78d6", "baseline": "#eb6834"}
-CODEC_MARKERS = {"model": "o", "baseline": "s"}
-CODEC_NAMES = {"model": "With masking model", "baseline": "Flat noise (baseline)"}
+CODEC_COLORS = {"model": "#2a78d6", "baseline": "#eb6834", "aac": "#1baf7a", "opus": "#eda100"}
+CODEC_MARKERS = {"model": "o", "baseline": "s", "aac": "^", "opus": "D"}
+CODEC_NAMES = {
+    "model": "With masking model",
+    "baseline": "Flat noise (baseline)",
+    "aac": "AAC (ffmpeg)",
+    "opus": "Opus (libopus)",
+}
+OWN_CODECS = ("model", "baseline")
 
 
-def _style(axes) -> None:
+def style_axes(axes) -> None:
     axes.set_facecolor(SURFACE)
     axes.grid(True, color=GRID, linewidth=1)
     axes.set_axisbelow(True)
@@ -38,11 +44,11 @@ def _style(axes) -> None:
     axes.tick_params(colors=INK_SECONDARY, labelsize=9, length=0)
 
 
-def _headline(figure, title: str, subtitle: str) -> float:
+def headline(figure, title: str, subtitle: str) -> float:
     """Writes the two lines at the top and returns the height that is left for the plots."""
     height = figure.get_figheight()
     figure.text(
-        0.012, 1 - 0.14 / height, title, fontsize=13, fontweight="semibold", color=INK, va="top"
+        0.012, 1 - 0.14 / height, title, fontsize=13, fontweight="bold", color=INK, va="top"
     )
     figure.text(0.012, 1 - 0.42 / height, subtitle, fontsize=9.5, color=INK_SECONDARY, va="top")
     return 1 - 0.68 / height
@@ -86,7 +92,7 @@ def plot_masking(
     highest = float(np.ceil(signal_db.max() / 10) * 10) + 5
 
     for axes, panel in zip(all_axes, panels):
-        _style(axes)
+        style_axes(axes)
         noise_db = metrics.level_db_spl(panel.noise)
         axes.stairs(
             signal_db,
@@ -134,7 +140,7 @@ def plot_masking(
         fontsize=9,
         labelcolor=INK_SECONDARY,
     )
-    top = _headline(
+    top = headline(
         figure,
         f"Where the noise goes: {item} at {bitrate // 1000} kbit/s",
         "Mean energy of all frames, measured from the decoded file. Noise below the black line "
@@ -164,8 +170,8 @@ def plot_measures(path: Path, results: list[dict]) -> None:
     for column, item in enumerate(items):
         for row_index, (key, label) in enumerate(measures):
             axes = all_axes[row_index][column]
-            _style(axes)
-            for codec in CODEC_COLORS:
+            style_axes(axes)
+            for codec in OWN_CODECS:
                 rows = sorted(
                     (r for r in results if r["item"] == item and r["codec"] == codec),
                     key=lambda r: r["bitrate"],
@@ -202,13 +208,68 @@ def plot_measures(path: Path, results: list[dict]) -> None:
         fontsize=9,
         labelcolor=INK_SECONDARY,
     )
-    top = _headline(
+    top = headline(
         figure,
         "The SNR prefers flat noise, the masking threshold prefers the model",
         "Each column is one synthetic signal. Higher is better for SNR, lower for the excess, "
         "which favors the model by construction. The SNR rows use a scale per signal.",
     )
     figure.tight_layout(rect=(0, 0.04, 1, top))
+    figure.savefig(path, dpi=150, facecolor=SURFACE)
+    plt.close(figure)
+
+
+def plot_visqol(path: Path, results: list[dict]) -> None:
+    """The score of ViSQOL over the real bitrate, one panel per item, on one common scale."""
+    items = list(dict.fromkeys(row["item"] for row in results))
+    codecs = [codec for codec in CODEC_COLORS if any(r["codec"] == codec for r in results)]
+    figure, all_axes = plt.subplots(
+        1,
+        len(items),
+        figsize=(1.95 * len(items) + 0.9, 3.9),
+        sharey=True,
+        facecolor=SURFACE,
+        squeeze=False,
+    )
+    for axes, item in zip(all_axes[0], items):
+        style_axes(axes)
+        for codec in codecs:
+            rows = sorted(
+                (r for r in results if r["item"] == item and r["codec"] == codec),
+                key=lambda r: r["bitrate"],
+            )
+            axes.plot(
+                [r["actual_bitrate"] / 1000 for r in rows],
+                [r["visqol_mos"] for r in rows],
+                color=CODEC_COLORS[codec],
+                linewidth=2,
+                marker=CODEC_MARKERS[codec],
+                markersize=5.5,
+                markeredgecolor=SURFACE,
+                markeredgewidth=1.2,
+                label=CODEC_NAMES[codec],
+            )
+        axes.set_title(item.replace("_", " "), loc="left", fontsize=10, color=INK)
+        axes.set_xlabel("kbit/s", color=INK_SECONDARY, fontsize=9)
+    all_axes[0][0].set_ylabel("ViSQOL MOS-LQO", color=INK_SECONDARY, fontsize=9)
+    handles, labels = all_axes[0][0].get_legend_handles_labels()
+    figure.legend(
+        handles,
+        labels,
+        loc="lower left",
+        bbox_to_anchor=(0.012, 0.0),
+        ncol=len(labels),
+        frameon=False,
+        fontsize=9,
+        labelcolor=INK_SECONDARY,
+    )
+    top = headline(
+        figure,
+        "ViSQOL: one model for all codecs",
+        "Higher is better, at most about 4.75. Each panel is one synthetic signal. ViSQOL was "
+        "trained on real music, so these signals may lie outside of what it knows.",
+    )
+    figure.tight_layout(rect=(0, 0.09, 1, top))
     figure.savefig(path, dpi=150, facecolor=SURFACE)
     plt.close(figure)
 
@@ -222,7 +283,7 @@ def plot_pre_echo(
     span = np.arange(attack - before, attack + after)
     milliseconds = (span - attack) / metrics.SAMPLE_RATE * 1000
     figure, axes = plt.subplots(figsize=(9, 4.2), facecolor=SURFACE)
-    _style(axes)
+    style_axes(axes)
     axes.plot(
         milliseconds,
         decoded[span],
@@ -247,7 +308,7 @@ def plot_pre_echo(
         arrowprops={"arrowstyle": "-", "color": INK_SECONDARY, "linewidth": 1},
     )
     axes.legend(loc="upper left", frameon=False, fontsize=9, labelcolor=INK_SECONDARY)
-    top = _headline(
+    top = headline(
         figure,
         f"Pre-echo: {item.replace('_', ' ')} at {bitrate // 1000} kbit/s",
         "A frame spreads its noise over its whole 43 ms window. Without block switching, it "

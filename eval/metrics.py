@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import csv
+import re
+import subprocess
 import wave
 from dataclasses import dataclass
 from pathlib import Path
@@ -84,6 +86,30 @@ def level_db_spl(energy: np.ndarray) -> np.ndarray:
     """On the scale of the psychoacoustic model: a full scale sine has the energy 512 and 96 dB SPL."""
     tiny = FULL_SCALE_ENERGY * 1e-20
     return FULL_SCALE_DB_SPL + 10 * np.log10(np.maximum(energy, tiny) / FULL_SCALE_ENERGY)
+
+
+def visqol_mos(folder: Path, reference: Path, degraded: Path) -> float:
+    """The score of ViSQOL in its audio mode. The folder is the one built by build_visqol.sh.
+
+    It looks for its model relative to the working directory, so it has to run from its own folder.
+    """
+    result = subprocess.run(
+        [
+            str(Path(folder).resolve() / "bazel-bin" / "visqol"),
+            "--reference_file",
+            str(Path(reference).resolve()),
+            "--degraded_file",
+            str(Path(degraded).resolve()),
+        ],
+        cwd=folder,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    match = re.search(r"MOS-LQO:\s+([0-9.]+)", result.stdout)
+    if not match:
+        raise ValueError(f"ViSQOL gave no score: {result.stdout}{result.stderr}")
+    return float(match.group(1))
 
 
 @dataclass

@@ -1,0 +1,10 @@
+name,file,start_seconds,duration_seconds,category,source,license
+claves,26_claves.wav,0,10,training,"Samuel Gremaud, https://freesound.org/people/SamuelGremaud/sounds/517609/",CC0 1.0
+castanets,27_castanets.wav,0,10,transient,"Satoration, https://freesound.org/people/Satoration/sounds/57299/",CC BY 4.0
+glockenspiel,13_glockenspiel.wav,0,10,tonal with attacks,"Anasas6, https://freesound.org/people/Anasas6/sounds/502882/",CC0 1.0
+violin,02_violin.wav,0,10,tonal,"FreqMan, https://freesound.org/people/FreqMan/sounds/42955/",CC BY 4.0
+accordion,20c_accordion.wav,0,10,tonal and dense,"eyenorth, https://freesound.org/people/eyenorth/sounds/482213/",CC BY 4.0
+jazz,23_jazz.wav,0,10,dense music,"Scott D. Hampton, https://soundcloud.com/scottdhampton/byrd-in-hand-extended",CC BY 3.0
+choir,04_choral.wav,0,10,singing,"klankbeeld, https://freesound.org/people/klankbeeld/sounds/263612/",CC BY 4.0
+speech_female,female_speech_music_2_FG.wav,0,10,speech,"Fraunhofer IIS, part of ODAQ",CC BY 4.0
+speech_male,SitaSings_remix1_FG.wav,0,8,speech,"Nina Paley, Sita Sings the Blues, https://archive.org/details/Sita_Sings_the_Blues",CC0 1.0

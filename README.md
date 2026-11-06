@@ -17,8 +17,10 @@ far are measurements on synthetic signals, which show that the noise goes where 
 ![Signal, threshold and noise per band for pink noise at 48 kbit/s](eval/results/masking_pink_noise_48k.png)
 
 This does not show that it sounds better, and the model's own threshold cannot rank it against AAC or
-Opus. The [evaluation](eval/README.md) has all measures, what they can and cannot say, and the known
-weaknesses, above all pre-echo.
+Opus. The one independent measure so far, ViSQOL, actually prefers flat noise on most of these signals,
+mainly because the model limits the bandwidth at low bitrates. Whether that limit helps or hurts is
+open until someone listens. The [evaluation](eval/README.md) has all measures, what they can and cannot
+say, the causes found so far, and the known weaknesses.
 
 | Phase | Content | Status |
 |---|---|---|
@@ -26,7 +28,7 @@ weaknesses, above all pre-echo.
 | 2 | Core: WAV, MDCT, quantization, bitstream, encoder and decoder without psychoacoustics | done |
 | 3 | Psychoacoustic model, bit allocation with rate loop, better entropy coding | done, not yet tested by ear |
 | 4 | Test levels: unit, roundtrip, conformance, end-to-end, damaged input, evaluation | done for the current code |
-| 5 | Evaluation: objective metrics and a MUSHRA-style listening test | SNR, segmental SNR, masking and comparison with AAC and Opus done; ViSQOL, real music and listening test missing |
+| 5 | Evaluation: objective metrics and a MUSHRA-style listening test | Measures on synthetic signals done, including ViSQOL, and the [listening test](listening-test/README.md) is prepared; real music and listeners missing |
 
 ## Method
 
@@ -87,7 +89,7 @@ tests/conformance/  Reference bitstreams that every platform must decode to the 
 tests/e2e/          End-to-end tests of the tools with Robot Framework
 eval/               Metrics, plots and comparison with AAC and Opus in Python
 eval/results/       The tables and figures of the last evaluation
-listening-test/     Listening-test setup, without licensed audio files
+listening-test/     Scripts for the listening test and its analysis, without audio files
 .github/workflows/  CI: build matrix, sanitizers, evaluation, formatting
 ```
 

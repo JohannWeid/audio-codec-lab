@@ -88,6 +88,10 @@ jobs:
         run: python -m unittest discover --start-directory eval --verbose
         env:
           CODEC_TOOLS_DIR: build/ci
+      - name: Test the scripts of the listening test
+        run: python -m unittest discover --start-directory listening-test --verbose
+        env:
+          CODEC_TOOLS_DIR: build/ci
       - name: Run the evaluation
         run: python eval/evaluate.py --tools build/ci --out build/eval
       - uses: actions/upload-artifact@v7

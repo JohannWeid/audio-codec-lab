@@ -173,6 +173,60 @@ class Signals(unittest.TestCase):
         self.assertGreater(np.max(np.abs(after)), 0.1)
 
 
+@unittest.skipIf(os.name == "nt", "the stand-in for ViSQOL is a shell script")
+class ReadingVisqol(unittest.TestCase):
+    """With a stand-in, since CI does not build ViSQOL. It says what it was asked and where it ran."""
+
+    def stand_in(self, folder: Path, output: str) -> None:
+        binary = folder / "bazel-bin" / "visqol"
+        binary.parent.mkdir()
+        binary.write_text(
+            f'#!/bin/sh\n[ -d model ] || exit 3\necho "{output}"\nprintf "%s\\n" "$@" > arguments.txt\n',
+            encoding="ascii",
+        )
+        binary.chmod(0o755)
+        (folder / "model").mkdir()
+
+    def test_the_score_is_read_from_the_output(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            self.stand_in(folder, "Audio mode\\nMOS-LQO:\\t\\t3.25")
+            self.assertEqual(metrics.visqol_mos(folder, Path("a.wav"), Path("b.wav")), 3.25)
+            arguments = (folder / "arguments.txt").read_text(encoding="ascii").splitlines()
+        self.assertEqual(arguments[0], "--reference_file")
+        self.assertEqual(Path(arguments[1]).name, "a.wav")
+        self.assertEqual(arguments[2], "--degraded_file")
+        self.assertEqual(Path(arguments[3]).name, "b.wav")
+        self.assertTrue(Path(arguments[1]).is_absolute())
+        self.assertTrue(Path(arguments[3]).is_absolute())
+
+    def test_output_without_a_score_is_an_error(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            self.stand_in(folder, "something else")
+            with self.assertRaises(ValueError):
+                metrics.visqol_mos(folder, Path("a.wav"), Path("b.wav"))
+
+    def test_a_failing_program_is_an_error(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            self.stand_in(folder, "MOS-LQO: 3.25")
+            (folder / "model").rmdir()
+            with self.assertRaises(subprocess.CalledProcessError):
+                metrics.visqol_mos(folder, Path("a.wav"), Path("b.wav"))
+
+    @unittest.skipUnless(os.environ.get("CODEC_VISQOL_DIR"), "needs a real ViSQOL")
+    def test_the_real_program_reaches_its_expected_score(self):
+        folder = Path(os.environ["CODEC_VISQOL_DIR"])
+        data = folder / "testdata" / "conformance_testdata_subset"
+        score = metrics.visqol_mos(
+            folder,
+            data / "contrabassoon48_stereo.wav",
+            data / "contrabassoon48_stereo_24kbps_aac.wav",
+        )
+        self.assertAlmostEqual(score, 2.346868, places=4)
+
+
 class WithRealTools(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -259,6 +313,45 @@ class WithRealTools(unittest.TestCase):
         self.assertLess(measured["on"]["mean_excess_db"], 0.75 * measured["off"]["mean_excess_db"])
         self.assertGreater(measured["off"]["snr_db"], measured["on"]["snr_db"] + 1)
 
+    @unittest.skipIf(os.name == "nt", "the stand-in for ViSQOL is a shell script")
+    def test_whole_evaluation_uses_visqol_if_named(self):
+        out = self.work / "out_visqol"
+        stand_in = self.work / "visqol"
+        (stand_in / "bazel-bin").mkdir(parents=True)
+        binary = stand_in / "bazel-bin" / "visqol"
+        # The score tells apart what was rated: the bitrate is not in the file name of the original.
+        binary.write_text(
+            '#!/bin/sh\ncase "$4" in *_model_*) echo "MOS-LQO: 4.5";; *) echo "MOS-LQO: 2.5";; esac\n',
+            encoding="ascii",
+        )
+        binary.chmod(0o755)
+        script = Path(__file__).with_name("evaluate.py")
+        subprocess.run(
+            [
+                sys.executable,
+                str(script),
+                "--tools",
+                str(self.tools),
+                "--out",
+                str(out),
+                "--duration",
+                "1",
+                "--bitrates",
+                "48000",
+                "--visqol",
+                str(stand_in),
+            ],
+            check=True,
+            capture_output=True,
+        )
+        with open(out / "results.csv", newline="", encoding="ascii") as file:
+            rows = list(csv.DictReader(file))
+        for row in rows:
+            expected = "4.5" if row["codec"] == "model" else "2.5"
+            self.assertEqual(row["visqol_mos"], expected, row["codec"])
+        self.assertIn("ViSQOL MOS-LQO", (out / "results.md").read_text(encoding="ascii"))
+        self.assertGreater((out / "visqol.png").stat().st_size, 0)
+
     def test_whole_evaluation_writes_all_results(self):
         out = self.work / "out"
         script = Path(__file__).with_name("evaluate.py")
@@ -295,6 +388,11 @@ class WithRealTools(unittest.TestCase):
 
         self.assertLess(value("model", "mean_excess_db"), value("baseline", "mean_excess_db") / 2)
         self.assertGreater(value("baseline", "snr_db"), value("model", "snr_db"))
+
+        # Without ViSQOL, nothing pretends to come from it.
+        self.assertNotIn("visqol_mos", rows[0])
+        self.assertFalse((out / "visqol.png").exists())
+        self.assertNotIn("ViSQOL MOS-LQO", (out / "results.md").read_text(encoding="ascii"))
 
         for name in ("results.md", "measures.png", "pre_echo_clicks_48k.png"):
             self.assertGreater((out / name).stat().st_size, 0, name)

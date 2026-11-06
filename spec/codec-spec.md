@@ -225,8 +225,10 @@ ones above them stay empty. This gives 3.8 kHz at 16 kbit/s, 7.6 kHz at 32 kbit/
 kbit/s, 15.4 kHz at 64 kbit/s, and the full bandwidth from 96 kbit/s on. Each band counts about the
 same for the ear, but the high ones hold far more coefficients, so with too few bits it is better to
 serve the low bands properly. The value comes from a comparison of 1, 1.25, 1.5, 1.75, 2 and 3 bits
-on tones, harmonic tones, pink noise and white noise. Without this limit, the model does worse than
-flat noise for broadband signals at low bitrates. The bandwidth stays the same from frame to frame,
+on tones, harmonic tones, pink noise and white noise, by the mean excess alone. Without this limit, the
+model does worse than flat noise by that measure for broadband signals at low bitrates. ViSQOL says the
+opposite: the limit is the main reason why it prefers flat noise, see the
+[evaluation](../eval/README.md#visqol-disagrees). The bandwidth stays the same from frame to frame,
 which avoids the audible flicker that a limit changing with the signal can cause. It applies to the
 model only, not to the baseline.
 
@@ -268,6 +270,8 @@ the decoded files on more signals, including its limits.
 ## 8. Open questions
 
 - [ ] Final target bitrates, after a short listening check
+- [ ] Whether the bandwidth limit stays. The mean excess and ViSQOL disagree on it, so this also takes
+      listening and real music.
 - [ ] Bit reservoir as an optional extension, if strict budgets audibly hurt transients. The
       [evaluation](../eval/README.md) shows that attacks do run short of bits while other frames have
       bits to spare; whether this is audible is still open.

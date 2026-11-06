@@ -3,9 +3,10 @@
 Runs the codec with and without its model, and AAC and Opus through ffmpeg, on a set of signals and
 measures the results. The numbers and figures in [results](results) come from these scripts.
 
-**What this does not show:** it says nothing about how the codec sounds. All measures here are
-computed, on synthetic signals. Real music and a listening test are still missing, and so is ViSQOL.
-Only the listening test can answer whether the model is an improvement.
+**What this does not show:** it says nothing certain about how the codec sounds. All measures here are
+computed, on synthetic signals. Real music and a listening test are still missing, and only the
+listening test can answer whether the model is an improvement. So far, the one independent measure
+speaks against it on most of these signals, see [below](#visqol-disagrees).
 
 ## Run it
 
@@ -24,6 +25,13 @@ This takes about a minute. On Windows, the tools are in `build/default/Release`.
 | `--items folder` | Use WAV files (16 bit, 48 kHz, mono) instead of the synthetic signals |
 | `--bitrates 32000 64000` | Other target bitrates, in bit/s |
 | `--duration 4` | Length of the synthetic signals in seconds |
+| `--visqol folder` | Also rate all files with ViSQOL, from the folder that `build_visqol.sh` created |
+
+[ViSQOL](https://github.com/google/visqol) has no ready-made binaries.
+[build_visqol.sh](build_visqol.sh) builds it on Linux with the flags that GCC 15 needs and checks that it
+reaches the expected score of ViSQOL's own conformance test, 2.34687. This takes up about 3 GB and about
+15 minutes, so CI does not do it, and its tests of this path use a stand-in for the program. The results
+in this repository were generated with the real one.
 
 To test the scripts, name the folder of the tools:
 
@@ -45,6 +53,7 @@ short bursts that provoke pre-echo. They are stand-ins and do not replace real m
 | Segmental SNR | Mean SNR of 20 ms segments, limited to -10 to 35 dB, without silent segments |
 | Mean excess | Mean over all frames and bands of how many dB the noise lies above the masking threshold. Bands below it count as 0. |
 | Bands above | Share of all bands in all frames with noise above the masking threshold |
+| ViSQOL | The MOS-LQO of ViSQOL in its audio mode, a prediction of the score in a listening test, up to about 4.75 |
 | Bitrate | Size of the file over its duration, including the container for AAC and Opus |
 
 The noise always comes from the decoded file: the difference to the original goes through the same
@@ -60,9 +69,16 @@ bitrate overshoots at low targets, up to 28 instead of 16 kbit/s, so compare wit
 the last table. Opus runs in hard CBR, since its usual VBR mode took up to twice the target on tonal
 signals.
 
+ViSQOL does not depend on this codec's model, so it is the one measure here that can compare all
+codecs. It is still only a prediction, trained on real music, and these synthetic signals are unlike
+what it was trained on.
+
 ## Results
 
-All tables are in [results/results.md](results/results.md). They were generated with ffmpeg 8.0.1.
+All tables are in [results/results.md](results/results.md). They were generated with ffmpeg 8.0.1. The
+numbers for this codec were identical on another machine in CI. Those for AAC and Opus differed there by
+up to 2.4 dB of SNR, probably because of another version of ffmpeg, so small differences between them
+mean little.
 
 ![Signal, threshold and noise per band for pink noise at 48 kbit/s](results/masking_pink_noise_48k.png)
 
@@ -78,6 +94,42 @@ drops from 50.7 to 15.1 dB with the model. On white noise, the bands above the t
 95.9 % to 11.8 %. The excess favors the model by construction, since the encoder aims at exactly these
 thresholds. So this is evidence that the model does what it is designed to do, not that it sounds
 better.
+
+### ViSQOL disagrees
+
+![ViSQOL scores of all codecs for six signals](results/visqol.png)
+
+ViSQOL prefers flat noise to the model in 25 of the 30 cases, in places by a wide margin: on white noise
+at 32 kbit/s it gives 1.00 against 3.66, on pink noise at 48 kbit/s 2.05 against 3.43. The model is ahead
+only on the chords from 48 kbit/s on and on pink noise at 96 kbit/s. On the noise signals, flat noise also
+beats AAC and Opus, which replace noise with something that only sounds similar. That hints that ViSQOL
+rewards the exact waveform on such signals, so these scores should not be taken too literally.
+
+Counter-checks with modified copies of the encoder show two causes. The scripts do not produce these
+figures, and these changes are not in the codec.
+
+| Signal and bitrate | Model | Model without limit | Flat noise | Flat noise with limit |
+|---|---:|---:|---:|---:|
+| White noise, 32 kbit/s | 1.00 | 3.47 | 3.66 | 1.00 |
+| Pink noise, 48 kbit/s | 2.05 | 3.59 | 3.43 | 2.04 |
+| Harmonic, 16 kbit/s | 2.37 | 3.75 | 4.48 | 2.36 |
+| Clicks, 96 kbit/s, where no limit applies | 3.21 | 3.21 | 4.26 | 4.26 |
+
+- **The bandwidth limit** is the main cause. With the same limit, flat noise falls to the scores of the
+  model, and without it the model moves ahead on pink noise. But the two measures pull in
+  opposite directions: without the limit, the mean excess on pink noise at 32 kbit/s rises from 1.02 to
+  4.57 dB. So it is open which is right, the clean but dull sound with the limit or the full bandwidth
+  with more audible noise. That takes listening.
+- **The quiet background** explains the clicks. In the decoded file, the part between the clicks was
+  replaced with the original, then the part before each attack, then the clicks. At 96 kbit/s, the first
+  lifts the model from 3.21 to 4.49, level with flat noise at 4.51, while the second adds 0.12 and the
+  third nothing. So on this signal ViSQOL does not object to pre-echo, as might be expected, but to the
+  background at about -72 dBFS, which the model holds to be inaudible and does not code. That may
+  well be right at a normal listening level, and it may matter little on real recordings.
+
+Without the limit, the model is still behind flat noise on white noise, by 0.05 to 0.32, on the harmonic
+signal at 16 kbit/s (3.75 against 4.48), and on the chords at 16 kbit/s (4.19 against 4.39). So the two
+causes do not explain everything.
 
 ### Known weaknesses
 
