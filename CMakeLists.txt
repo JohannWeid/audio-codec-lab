@@ -58,7 +58,7 @@ target_include_directories(codec PUBLIC src)
 target_link_libraries(codec PRIVATE codec_options)
 target_compile_definitions(codec PRIVATE CODEC_VERSION="${PROJECT_VERSION}")
 
-foreach(tool IN ITEMS encode decode)
+foreach(tool IN ITEMS encode decode analyze)
   add_executable(codec-${tool} src/tools/codec_${tool}.cpp)
   target_link_libraries(codec-${tool} PRIVATE codec codec_options)
 endforeach()

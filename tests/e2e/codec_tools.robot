@@ -1,5 +1,5 @@
 *** Settings ***
-Documentation       End-to-end tests of codec-encode and codec-decode. They run the real programs on
+Documentation       End-to-end tests of the command line tools. They run the real programs on
 ...                 real files, as a user would. Exit code 2 means wrong usage, 1 means an error.
 ...
 ...                 Start from the root of the repository and name the folder of the tools:
@@ -113,6 +113,8 @@ Encoder Reports Wrong Usage
     Should Fail With Code    2    ${ENCODER}    ${input}    ${WORK}${/}out.bin    --bitrate
     Should Fail With Code    2    ${ENCODER}    ${input}    ${WORK}${/}out.bin    --bitrate    abc
     Should Fail With Code    2    ${ENCODER}    ${input}    ${WORK}${/}out.bin    --bitrate    -1
+    Should Fail With Code    2    ${ENCODER}    ${input}    ${WORK}${/}out.bin    --bitrate    64000x
+    Should Fail With Code    2    ${ENCODER}    ${input}    ${WORK}${/}out.bin    third_file    --bitrate    64000
     Should Fail With Code    2    ${ENCODER}    ${input}    ${WORK}${/}out.bin    --bitrate    64000    --psy
     Should Fail With Code    2    ${ENCODER}    ${input}    ${WORK}${/}out.bin    --bitrate    64000    --psy    maybe
     File Should Not Exist    ${WORK}${/}out.bin
@@ -145,6 +147,47 @@ Decoder Rejects Files It Cannot Read
     Should Fail With Code    1    ${DECODER}    ${input}    ${WORK}${/}out.wav
     File Should Not Exist    ${WORK}${/}out.wav
 
+Analysis Describes The Same Bitstream As The Encoder
+    [Template]    Analysis Should Agree With Encoder
+    0    64000    on
+    1025    64000    on
+    10000    16000    on
+    10000    64000    on
+    10000    64000    off
+
+Analysis Shows Less Audible Noise With The Model
+    ${input}=    Create Signal    mixture    ${ONE_SECOND}
+    ${with_model}=    Analyze    ${input}    64000    on
+    ${with_model_excess}=    Mean Excess Db    ${with_model}
+    ${baseline}=    Analyze    ${input}    64000    off
+    ${baseline_excess}=    Mean Excess Db    ${baseline}
+    Should Be True    ${with_model_excess} < ${baseline_excess}
+
+Analysis Reports Wrong Usage
+    ${input}=    Create Signal    tone    1000
+    Should Fail With Code    2    ${ANALYZER}
+    Should Fail With Code    2    ${ANALYZER}    ${input}
+    Should Fail With Code    2    ${ANALYZER}    ${input}    ${WORK}${/}out.csv
+    Should Fail With Code    2    ${ANALYZER}    ${input}    ${WORK}${/}out.csv    --bitrate    abc
+    Should Fail With Code    2    ${ANALYZER}    ${input}    ${WORK}${/}out.csv    --bitrate    64000    --psy    maybe
+    File Should Not Exist    ${WORK}${/}out.csv
+
+Analysis Rejects Input The Encoder Rejects
+    ${input}=    Create Signal    tone    1000
+    Should Fail With Code    1    ${ANALYZER}    ${WORK}${/}missing.wav    ${WORK}${/}out.csv    --bitrate    64000
+    Should Fail With Code    1    ${ANALYZER}    ${input}    ${WORK}${/}out.csv    --bitrate    7999
+    Write Test Signal    ${WORK}${/}stereo.wav    tone    1000    channels=2
+    Should Fail With Code    1    ${ANALYZER}    ${WORK}${/}stereo.wav    ${WORK}${/}out.csv    --bitrate    64000
+    File Should Not Exist    ${WORK}${/}out.csv
+
+Tools Report A File They Cannot Write
+    ${input}=    Create Signal    tone    1000
+    ${missing}=    Set Variable    ${WORK}${/}no such folder
+    ${stream}=    Encode    ${input}    64000
+    Should Fail With Code    1    ${ENCODER}    ${input}    ${missing}${/}out.bin    --bitrate    64000
+    Should Fail With Code    1    ${DECODER}    ${stream}    ${missing}${/}out.wav
+    Should Fail With Code    1    ${ANALYZER}    ${input}    ${missing}${/}out.csv    --bitrate    64000
+
 Decoder Rejects Damaged Bitstreams
     ${input}=    Create Signal    tone    5000
     ${stream}=    Encode    ${input}    64000
@@ -164,8 +207,10 @@ Prepare The Tools And A Working Directory
     Should Not Be Empty    ${TOOLS_DIR}    Name the folder of the tools with --variable TOOLS_DIR:folder.
     ${encoder}=    Tool Path    ${TOOLS_DIR}    codec-encode
     ${decoder}=    Tool Path    ${TOOLS_DIR}    codec-decode
+    ${analyzer}=    Tool Path    ${TOOLS_DIR}    codec-analyze
     Set Suite Variable    ${ENCODER}    ${encoder}
     Set Suite Variable    ${DECODER}    ${decoder}
+    Set Suite Variable    ${ANALYZER}    ${analyzer}
     Set Suite Variable    ${WORK}    ${TEMPDIR}${/}audio_codec_lab_e2e
     Remove Directory    ${WORK}    recursive=True
     Create Directory    ${WORK}
@@ -220,6 +265,20 @@ Stream Should Fit The Bitrate
     ${size}=    Get File Size    ${stream}
     ${allowed}=    Largest Allowed Stream Size    ${ONE_SECOND}    ${bitrate}
     Should Be True    ${size} <= ${allowed}    ${size} bytes are more than the ${allowed} allowed.
+
+Analyze
+    [Arguments]    ${input}    ${bitrate}    ${psy}
+    ${table}=    Set Variable    ${WORK}${/}analysis_${psy}.csv
+    Run Successfully    ${ANALYZER}    ${input}    ${table}    --bitrate    ${bitrate}    --psy    ${psy}
+    RETURN    ${table}
+
+Analysis Should Agree With Encoder
+    [Arguments]    ${samples}    ${bitrate}    ${psy}
+    ${input}=    Create Signal    mixture    ${samples}
+    ${table}=    Analyze    ${input}    ${bitrate}    ${psy}
+    ${stream}=    Set Variable    ${WORK}${/}analyzed.bin
+    Run Successfully    ${ENCODER}    ${input}    ${stream}    --bitrate    ${bitrate}    --psy    ${psy}
+    Analysis Should Describe Stream    ${table}    ${stream}    ${samples}
 
 Encoder Should Reject
     [Arguments]    &{signal}

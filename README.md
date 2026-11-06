@@ -8,18 +8,25 @@ learning project about the principles of perceptual coding, not a competitor to 
 
 **Status: work in progress.** The encoder and decoder work end to end, from WAV to bitstream and
 back. A psychoacoustic model shapes the quantization noise, and an adaptive range coder codes the
-result. On synthetic test signals from 32 kbit/s on, less noise lies above the model's own thresholds
-than with flat noise. Nobody has listened to it in a test yet, so there are no listening results to
-show. Reference bitstreams decode to identical PCM on Linux, Windows and macOS, on x86-64 and ARM (see
-[tests/conformance](tests/conformance/README.md)).
+result. Reference bitstreams decode to identical PCM on Linux, Windows and macOS, on x86-64 and ARM
+(see [tests/conformance](tests/conformance/README.md)).
+
+Nobody has listened to it in a test yet, so there are no listening results to show. What exists so
+far are measurements on synthetic signals, which show that the noise goes where the model wants it:
+
+![Signal, threshold and noise per band for pink noise at 48 kbit/s](eval/results/masking_pink_noise_48k.png)
+
+This does not show that it sounds better, and the model's own threshold cannot rank it against AAC or
+Opus. The [evaluation](eval/README.md) has all measures, what they can and cannot say, and the known
+weaknesses, above all pre-echo.
 
 | Phase | Content | Status |
 |---|---|---|
 | 1 | Specification | in progress |
 | 2 | Core: WAV, MDCT, quantization, bitstream, encoder and decoder without psychoacoustics | done |
 | 3 | Psychoacoustic model, bit allocation with rate loop, better entropy coding | done, not yet tested by ear |
-| 4 | Test levels: unit, roundtrip, conformance, end-to-end, damaged input | done for the current code, grows with phase 3 |
-| 5 | Evaluation: objective metrics and a MUSHRA-style listening test | planned |
+| 4 | Test levels: unit, roundtrip, conformance, end-to-end, damaged input, evaluation | done for the current code |
+| 5 | Evaluation: objective metrics and a MUSHRA-style listening test | SNR, segmental SNR, masking and comparison with AAC and Opus done; ViSQOL, real music and listening test missing |
 
 ## Method
 
@@ -66,20 +73,22 @@ codec-decode out.bin out.wav
 ```
 
 `--psy off` selects the baseline for comparison: the same codec with flat noise instead of the
-psychoacoustic model.
+psychoacoustic model. `codec-analyze` takes the same arguments as `codec-encode` and writes a table
+with the energy, thresholds and noise per frame and band, see [eval](eval/README.md).
 
 ## Repository layout
 
 ```text
 spec/               Codec and bitstream specification
 src/codec/          Codec library
-src/tools/          Command-line tools codec-encode and codec-decode
+src/tools/          Command-line tools codec-encode, codec-decode and codec-analyze
 tests/              Unit tests with GoogleTest
 tests/conformance/  Reference bitstreams that every platform must decode to the same result
 tests/e2e/          End-to-end tests of the tools with Robot Framework
-eval/               Metrics, plots and listening-test analysis in Python (planned)
+eval/               Metrics, plots and comparison with AAC and Opus in Python
+eval/results/       The tables and figures of the last evaluation
 listening-test/     Listening-test setup, without licensed audio files
-.github/workflows/  CI: build matrix, sanitizers, formatting
+.github/workflows/  CI: build matrix, sanitizers, evaluation, formatting
 ```
 
 ## License

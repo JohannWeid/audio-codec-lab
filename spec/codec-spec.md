@@ -262,9 +262,12 @@ At 16 kbit/s,
 the harmonic tones do worse, because the bandwidth of 3.8 kHz removes their tone at 5.3 kHz. The SNR
 falls as expected, for example from 45.5 to 25.2 dB for the harmonic tones at 32 kbit/s. These signals
 are synthetic, and these values only compare against the model itself, so whether it sounds better
-can only be shown by a listening test with real audio.
+can only be shown by a listening test with real audio. The [evaluation](../eval/README.md) measures
+the decoded files on more signals, including its limits.
 
 ## 8. Open questions
 
 - [ ] Final target bitrates, after a short listening check
-- [ ] Bit reservoir as an optional extension, if strict budgets audibly hurt transients
+- [ ] Bit reservoir as an optional extension, if strict budgets audibly hurt transients. The
+      [evaluation](../eval/README.md) shows that attacks do run short of bits while other frames have
+      bits to spare; whether this is audible is still open.

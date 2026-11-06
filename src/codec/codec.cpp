@@ -19,6 +19,40 @@ constexpr std::size_t kHeaderSize = 20;
 constexpr std::size_t kLengthFieldBytes = 2;
 constexpr std::uint32_t kLengthFieldBits = 16;
 
+void check_encoder_input(const WavAudio& audio, const EncoderOptions& options) {
+    if (audio.sample_rate != kSampleRate) {
+        throw std::invalid_argument("only 48 kHz audio is supported");
+    }
+    if (audio.channels != kChannels) {
+        throw std::invalid_argument("only mono audio is supported");
+    }
+    if (options.bitrate < kMinBitrate || options.bitrate > kMaxBitrate) {
+        throw std::invalid_argument("the bitrate must be in 8000 to 512000 bit/s");
+    }
+}
+
+// The one loop over all frames of the encoder, so that encode() and report_encoding() cannot
+// differ.
+template <typename OnFrame>
+void encode_frames(const WavAudio& audio, const EncoderOptions& options, OnFrame on_frame) {
+    const Mdct mdct(kFrameLength);
+    const PsychoacousticModel model;
+    const std::vector<std::vector<Sample>> blocks =
+        split_into_blocks(pcm_to_samples(audio.samples), kFrameLength);
+    FrameCoderState state;
+    for (std::size_t i = 0; i < blocks.size(); ++i) {
+        const std::uint32_t budget = frame_budget_bits(i, options.bitrate);
+        const std::size_t max_payload_bytes = (budget - kLengthFieldBits) / 8;
+        const std::vector<Sample> coefficients = mdct.forward(blocks[i]);
+        const EncodedFrame encoded = options.psychoacoustics
+                                         ? encode_perceptual(coefficients, model.analyze(blocks[i]),
+                                                             max_payload_bytes, state)
+                                         : encode_flat(coefficients, max_payload_bytes, state);
+        on_frame(blocks[i], coefficients, encoded, budget);
+        state = encoded.state;
+    }
+}
+
 }  // namespace
 
 std::uint32_t frame_budget_bits(std::uint64_t frame_index, std::uint32_t bitrate) noexcept {
@@ -29,15 +63,7 @@ std::uint32_t frame_budget_bits(std::uint64_t frame_index, std::uint32_t bitrate
 }
 
 std::vector<std::uint8_t> encode(const WavAudio& audio, const EncoderOptions& options) {
-    if (audio.sample_rate != kSampleRate) {
-        throw std::invalid_argument("only 48 kHz audio is supported");
-    }
-    if (audio.channels != kChannels) {
-        throw std::invalid_argument("only mono audio is supported");
-    }
-    if (options.bitrate < kMinBitrate || options.bitrate > kMaxBitrate) {
-        throw std::invalid_argument("the bitrate must be in 8000 to 512000 bit/s");
-    }
+    check_encoder_input(audio, options);
 
     const std::uint64_t total_samples = audio.samples.size();
 
@@ -51,27 +77,40 @@ std::vector<std::uint8_t> encode(const WavAudio& audio, const EncoderOptions& op
     header.write_bits(static_cast<std::uint32_t>(total_samples & 0xFFFFFFFFu), 32);
 
     std::vector<std::uint8_t> stream = header.bytes();
-
-    const Mdct mdct(kFrameLength);
-    const PsychoacousticModel model;
-    const std::vector<std::vector<Sample>> blocks =
-        split_into_blocks(pcm_to_samples(audio.samples), kFrameLength);
-    FrameCoderState state;
-    for (std::size_t i = 0; i < blocks.size(); ++i) {
-        const std::uint32_t budget = frame_budget_bits(i, options.bitrate);
-        const std::size_t max_payload_bytes = (budget - kLengthFieldBits) / 8;
-        const std::vector<Sample> coefficients = mdct.forward(blocks[i]);
-        EncodedFrame encoded = options.psychoacoustics
-                                   ? encode_perceptual(coefficients, model.analyze(blocks[i]),
-                                                       max_payload_bytes, state)
-                                   : encode_flat(coefficients, max_payload_bytes, state);
-        const std::vector<std::uint8_t>& payload = encoded.payload;
-        stream.push_back(static_cast<std::uint8_t>(payload.size() >> 8));
-        stream.push_back(static_cast<std::uint8_t>(payload.size() & 0xFFu));
-        stream.insert(stream.end(), payload.begin(), payload.end());
-        state = encoded.state;
-    }
+    encode_frames(audio, options,
+                  [&stream](const std::vector<Sample>&, const std::vector<Sample>&,
+                            const EncodedFrame& encoded, std::uint32_t) {
+                      const std::vector<std::uint8_t>& payload = encoded.payload;
+                      stream.push_back(static_cast<std::uint8_t>(payload.size() >> 8));
+                      stream.push_back(static_cast<std::uint8_t>(payload.size() & 0xFFu));
+                      stream.insert(stream.end(), payload.begin(), payload.end());
+                  });
     return stream;
+}
+
+std::vector<FrameReport> report_encoding(const WavAudio& audio, const EncoderOptions& options) {
+    check_encoder_input(audio, options);
+
+    const PsychoacousticModel model;
+    std::vector<FrameReport> reports;
+    encode_frames(audio, options,
+                  [&](const std::vector<Sample>& block, const std::vector<Sample>& coefficients,
+                      const EncodedFrame& encoded, std::uint32_t budget) {
+                      const MaskingAnalysis analysis = model.analyze(block);
+                      FrameReport report;
+                      report.masking_threshold = analysis.masking_threshold;
+                      report.quiet_threshold = analysis.quiet_threshold;
+                      report.noise = band_noise(coefficients, encoded.frame);
+                      report.payload_bytes = encoded.payload.size();
+                      report.budget_bits = budget;
+                      for (std::size_t band = 0; band < kBandCount; ++band) {
+                          for (std::size_t k = kBandEdges[band]; k < kBandEdges[band + 1]; ++k) {
+                              report.band_energy[band] += coefficients[k] * coefficients[k];
+                          }
+                      }
+                      reports.push_back(report);
+                  });
+    return reports;
 }
 
 ParsedStream parse_stream(const std::vector<std::uint8_t>& bytes) {

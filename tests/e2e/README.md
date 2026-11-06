@@ -1,7 +1,7 @@
 # End-to-end tests
 
-These Robot Framework tests run `codec-encode` and `codec-decode` on real files and check the output
-files and exit codes. Start them from the root of the repository, after building:
+These Robot Framework tests run `codec-encode`, `codec-decode` and `codec-analyze` on real files and
+check the output files and exit codes. Start them from the root of the repository, after building:
 
 ```bash
 python3 -m venv .venv

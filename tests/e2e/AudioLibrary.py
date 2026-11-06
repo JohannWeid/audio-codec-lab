@@ -1,4 +1,5 @@
 """Helpers for the end-to-end tests. Uses only the Python standard library."""
+import csv
 import math
 import os
 import random
@@ -81,6 +82,39 @@ def snr_db(reference: str, decoded: str) -> float:
 def wav_should_be_silent(path: str):
     if any(_read_samples(path)):
         raise AssertionError(f"{path} is not silent")
+
+
+def analysis_should_describe_stream(analysis: str, stream: str, samples: int):
+    """The table must have one line per frame and band, and agree with the size of the bitstream."""
+    with open(analysis, newline="", encoding="ascii") as file:
+        rows = list(csv.DictReader(file))
+    frames = math.ceil(samples / 1024) + 1
+    if len(rows) != frames * 25:
+        raise AssertionError(f"expected {frames * 25} lines, found {len(rows)}")
+    for row in rows:
+        for name in ("energy", "masking_threshold", "quiet_threshold", "noise"):
+            if not math.isfinite(float(row[name])) or float(row[name]) < 0:
+                raise AssertionError(f"{name} is not a finite energy in {row}")
+    if rows[-1]["last_coefficient"] != "1023":
+        raise AssertionError(f"the bands must end at coefficient 1023: {rows[-1]}")
+    payloads = sum(int(row["payload_bytes"]) for row in rows if row["band"] == "0")
+    expected = 20 + 2 * frames + payloads
+    actual = os.path.getsize(stream)
+    if actual != expected:
+        raise AssertionError(f"the table says {expected} bytes, the bitstream has {actual}")
+
+
+def mean_excess_db(analysis: str) -> float:
+    """Mean over all bands of how far the noise is above the threshold. Bands below it count as 0."""
+    with open(analysis, newline="", encoding="ascii") as file:
+        rows = list(csv.DictReader(file))
+    total = 0.0
+    for row in rows:
+        noise = float(row["noise"])
+        threshold = float(row["masking_threshold"])
+        if noise > threshold:
+            total += 10 * math.log10(noise / threshold)
+    return total / len(rows)
 
 
 def largest_allowed_stream_size(samples: int, bitrate: int) -> int:

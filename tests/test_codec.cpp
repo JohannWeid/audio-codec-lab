@@ -9,8 +9,12 @@
 #include <utility>
 #include <vector>
 
+#include "codec/bands.hpp"
 #include "codec/codec.hpp"
 #include "codec/framing.hpp"
+#include "codec/mdct.hpp"
+#include "codec/pcm.hpp"
+#include "codec/psychoacoustics.hpp"
 #include "test_helpers.hpp"
 
 namespace {
@@ -302,6 +306,98 @@ TEST(Codec, HandlesAFullScaleSignalAtTheLowestBitrate) {
         const WavAudio output = decode(encode_at(input, codec::kMinBitrate, psychoacoustics));
         EXPECT_EQ(output.samples.size(), input.size());
     }
+}
+
+TEST(Report, HoldsTheSizesOfTheEncodedFrames) {
+    const Pcm input = mixture(8 * kFrameLength);
+    for (const std::uint32_t bitrate : {16000u, 64000u, 256000u}) {
+        for (const bool psychoacoustics : {false, true}) {
+            SCOPED_TRACE(testing::Message() << bitrate << " psy=" << psychoacoustics);
+            EncoderOptions options;
+            options.bitrate = bitrate;
+            options.psychoacoustics = psychoacoustics;
+            const std::vector<codec::FrameReport> reports =
+                codec::report_encoding(make_audio(input), options);
+            const std::vector<std::uint32_t> sizes = frame_bits(encode(make_audio(input), options));
+            ASSERT_EQ(reports.size(), sizes.size());
+            for (std::size_t i = 0; i < reports.size(); ++i) {
+                EXPECT_EQ(16 + 8 * reports[i].payload_bytes, sizes[i]);
+                EXPECT_EQ(reports[i].budget_bits, frame_budget_bits(i, bitrate));
+            }
+        }
+    }
+}
+
+// Computed here from what the decoder gets, so that the report cannot just repeat a mistake of the
+// encoder. A band without a single coded coefficient has its whole energy as noise.
+TEST(Report, NoiseIsTheErrorThatTheDecoderLeaves) {
+    const Pcm input = mixture(8 * kFrameLength);
+    const codec::Mdct mdct(kFrameLength);
+    const std::vector<std::vector<Sample>> blocks =
+        codec::split_into_blocks(codec::pcm_to_samples(input), kFrameLength);
+    for (const std::uint32_t bitrate : {16000u, 64000u}) {
+        for (const bool psychoacoustics : {false, true}) {
+            SCOPED_TRACE(testing::Message() << bitrate << " psy=" << psychoacoustics);
+            EncoderOptions options;
+            options.bitrate = bitrate;
+            options.psychoacoustics = psychoacoustics;
+            const std::vector<codec::FrameReport> reports =
+                codec::report_encoding(make_audio(input), options);
+            const codec::ParsedStream stream = parse_stream(encode(make_audio(input), options));
+            ASSERT_EQ(reports.size(), blocks.size());
+            ASSERT_EQ(stream.frames.size(), blocks.size());
+            for (std::size_t i = 0; i < blocks.size(); ++i) {
+                const std::vector<Sample> original = mdct.forward(blocks[i]);
+                const std::vector<Sample> decoded = codec::dequantize_frame(stream.frames[i]);
+                for (std::size_t band = 0; band < codec::kBandCount; ++band) {
+                    Sample energy = 0;
+                    Sample error = 0;
+                    for (std::size_t k = codec::kBandEdges[band]; k < codec::kBandEdges[band + 1];
+                         ++k) {
+                        const Sample difference = original[k] - decoded[k];
+                        energy += original[k] * original[k];
+                        error += difference * difference;
+                    }
+                    EXPECT_NEAR(reports[i].band_energy[band], energy, 1e-9 * (energy + 1));
+                    EXPECT_NEAR(reports[i].noise[band], error, 1e-9 * (error + 1));
+                }
+            }
+        }
+    }
+}
+
+TEST(Report, ThresholdsAreThoseOfTheModelInBothModes) {
+    const Pcm input = mixture(8 * kFrameLength);
+    const codec::PsychoacousticModel model;
+    const std::vector<std::vector<Sample>> blocks =
+        codec::split_into_blocks(codec::pcm_to_samples(input), kFrameLength);
+    for (const bool psychoacoustics : {false, true}) {
+        SCOPED_TRACE(psychoacoustics);
+        EncoderOptions options;
+        options.psychoacoustics = psychoacoustics;
+        const std::vector<codec::FrameReport> reports =
+            codec::report_encoding(make_audio(input), options);
+        ASSERT_EQ(reports.size(), blocks.size());
+        for (std::size_t i = 0; i < blocks.size(); ++i) {
+            const codec::MaskingAnalysis analysis = model.analyze(blocks[i]);
+            EXPECT_EQ(reports[i].masking_threshold, analysis.masking_threshold);
+            EXPECT_EQ(reports[i].quiet_threshold, analysis.quiet_threshold);
+        }
+    }
+}
+
+TEST(Report, RejectsWhatTheEncoderRejects) {
+    WavAudio stereo = make_audio(Pcm(100));
+    stereo.channels = 2;
+    EXPECT_THROW(codec::report_encoding(stereo, EncoderOptions{}), std::invalid_argument);
+
+    WavAudio other_rate = make_audio(Pcm(100));
+    other_rate.sample_rate = 44100;
+    EXPECT_THROW(codec::report_encoding(other_rate, EncoderOptions{}), std::invalid_argument);
+
+    EncoderOptions too_low;
+    too_low.bitrate = codec::kMinBitrate - 1;
+    EXPECT_THROW(codec::report_encoding(make_audio(Pcm(100)), too_low), std::invalid_argument);
 }
 
 TEST(Decoder, ParseGivesTheSameIntegersAsTheEncoderUsed) {
