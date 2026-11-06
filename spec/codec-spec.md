@@ -220,17 +220,17 @@ only masked by the rest of the signal stay: their coarse steps remove them if bi
 they are coded if the budget allows it. Dropping those as well would stop the quality of a tone from
 rising at about 31 dB SNR, whatever the bitrate, because the skirts of its spectrum would be missing.
 
-**Bandwidth:** only the lowest bands that leave at least 1.75 bits per coefficient are coded, and the
-ones above them stay empty. This gives 3.8 kHz at 16 kbit/s, 7.6 kHz at 32 kbit/s, 11.4 kHz at 48
-kbit/s, 15.4 kHz at 64 kbit/s, and the full bandwidth from 96 kbit/s on. Each band counts about the
-same for the ear, but the high ones hold far more coefficients, so with too few bits it is better to
-serve the low bands properly. The value comes from a comparison of 1, 1.25, 1.5, 1.75, 2 and 3 bits
-on tones, harmonic tones, pink noise and white noise, by the mean excess alone. Without this limit, the
-model does worse than flat noise by that measure for broadband signals at low bitrates. ViSQOL says the
-opposite, also on real excerpts: the limit is the main reason why it prefers flat noise, see the
-[evaluation](../eval/README.md#real-music). The bandwidth stays the same from frame to frame,
-which avoids the audible flicker that a limit changing with the signal can cause. It applies to the
-model only, not to the baseline.
+**Bandwidth:** only the lowest bands that leave at least 1 bit per coefficient are coded, and the ones
+above them stay empty. This gives 6.4 kHz at 16 kbit/s, 11.4 kHz at 24 kbit/s, 15.4 kHz at 32 and 48
+kbit/s, and the full bandwidth from 64 kbit/s on. Each band counts about the same for the ear, but the
+high ones hold far more coefficients, so with very few bits it is better to serve the low bands properly.
+The first value of 1.75 bits came from the mean excess on synthetic signals. On real excerpts, ViSQOL
+then preferred flat noise in most cases, and the limit was the main reason. At 1 bit, the score at 32
+kbit/s rises from 2.04 to 3.96, for a mean excess of 2.36 dB instead of 1.44 dB. An informal comparison by
+ear by one person preferred 1 bit. This still has to be confirmed by the listening test, see the
+[evaluation](../eval/README.md#how-the-bandwidth-limit-was-chosen). The bandwidth stays the same from frame
+to frame, which avoids the audible flicker that a limit changing with the signal can cause. It applies to
+the model only, not to the baseline.
 
 **Mean excess:** the measure used in this document. It is the amount in dB by which noise lies above
 the thresholds, averaged over all bands, with bands below their threshold counting as 0.
@@ -249,29 +249,16 @@ no limit on the bandwidth. Everything else stays the same: transform, entropy co
 comparison then measures only the psychoacoustic model. The baseline is expected to reach a similar
 or better SNR at the same bitrate and to sound worse, because SNR does not reflect perception.
 
-Measured as the mean excess over the model's own thresholds, flat noise against the model, in dB:
-
-| Signal | 16 kbit/s | 32 kbit/s | 48 kbit/s | 64 kbit/s | 96 kbit/s |
-|---|---|---|---|---|---|
-| Tone at 1 kHz | 0.08 / 0.00 | 0.00 / 0.00 | 0.00 / 0.00 | 0.00 / 0.00 | 0.00 / 0.00 |
-| Harmonic tones with weak noise | 1.10 / 2.20 | 0.86 / 0.65 | 0.60 / 0.22 | 0.37 / 0.00 | 0.02 / 0.00 |
-| Pink noise | 3.15 / 2.80 | 1.87 / 1.01 | 1.03 / 0.48 | 0.52 / 0.25 | 0.04 / 0.00 |
-| White noise | 6.02 / 3.19 | 5.18 / 1.09 | 3.92 / 0.49 | 2.19 / 0.26 | 0.31 / 0.01 |
-
-From 32 kbit/s on, the model is never worse than flat noise here, and from 96 kbit/s on it keeps
-practically all noise below its thresholds. Below that, a part of the excess is the limited bandwidth.
-At 16 kbit/s,
-the harmonic tones do worse, because the bandwidth of 3.8 kHz removes their tone at 5.3 kHz. The SNR
-falls as expected, for example from 45.5 to 25.2 dB for the harmonic tones at 32 kbit/s. These signals
-are synthetic, and these values only compare against the model itself, so whether it sounds better
-can only be shown by a listening test with real audio. The [evaluation](../eval/README.md) measures
-the decoded files on more signals, including its limits.
+The [evaluation](../eval/README.md) measures both on synthetic signals and real excerpts. By ViSQOL, on real
+excerpts, the model is ahead of the baseline on most of them from 32 to 64 kbit/s and behind at 16 and 96
+kbit/s. The SNR falls with the model as expected, for example from 26.1 to 10.1 dB on the jazz excerpt at 48
+kbit/s. Whether it sounds better can only be shown by the listening test.
 
 ## 8. Open questions
 
 - [ ] Final target bitrates, after a short listening check
-- [ ] Whether the bandwidth limit stays. The mean excess and ViSQOL disagree on it, so this also takes
-      listening and real music.
+- [ ] Whether the listening test confirms the bandwidth limit of 1 bit per coefficient. The mean excess and
+      ViSQOL disagree on it at 32 kbit/s, and so far only one person has compared it by ear.
 - [ ] Bit reservoir as an optional extension, if strict budgets audibly hurt transients. The
       [evaluation](../eval/README.md) shows that attacks do run short of bits while other frames have
       bits to spare; whether this is audible is still open.

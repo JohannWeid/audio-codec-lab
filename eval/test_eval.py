@@ -303,11 +303,13 @@ class WithRealTools(unittest.TestCase):
                     self.assertEqual(delay_samples(samples, decoded), 0)
 
     def test_model_moves_noise_as_intended(self):
+        # At a bitrate that affords all bands. Below it, broadband noise pays for the wider bandwidth
+        # with a higher excess than flat noise, see section 6 of the specification.
         path, samples = self.item("pink_noise")
-        analysis = self.analyze(path, 64000, "on")
+        analysis = self.analyze(path, 96000, "on")
         measured = {}
         for psy in ("on", "off"):
-            decoded_path, _ = evaluate.code_own(self.tools, path, self.work, 64000, psy)
+            decoded_path, _ = evaluate.code_own(self.tools, path, self.work, 96000, psy)
             decoded = metrics.read_wav(decoded_path)
             measured[psy], _ = evaluate.measure(samples, decoded, analysis)
         self.assertLess(measured["on"]["mean_excess_db"], 0.75 * measured["off"]["mean_excess_db"])

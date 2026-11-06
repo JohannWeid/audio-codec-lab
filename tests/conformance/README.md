@@ -18,7 +18,7 @@ so every platform in CI decodes the same bytes.
 3. The encoder reaches the same quality as the reference. Its bitstream may differ between platforms,
    and the test log reports whether it does.
 
-Create new files only if the bitstream format changes on purpose:
+Create new files only if the bitstream format or the output of the encoder changes on purpose:
 
 ```bash
 python3 tests/conformance/regenerate.py build/default

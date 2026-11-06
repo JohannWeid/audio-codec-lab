@@ -11,12 +11,6 @@ namespace {
 
 constexpr int kStepsPerOctave = 8;
 
-// The bandwidth at a low bitrate leaves at least 1.75 bits for each coded coefficient: 4
-// coefficients for each 7 bits. This value comes from a comparison of several values, see section 6
-// of spec/codec-spec.md.
-constexpr std::size_t kCodedCoefficients = 4;
-constexpr std::size_t kCodedBits = 7;
-
 // Tries out one gain on a copy of the state, so that a rejected attempt leaves no trace.
 EncodedFrame encode_at_gain(const std::vector<Sample>& coefficients, int gain,
                             const Scalefactors& scalefactors, const FrameCoderState& state) {
@@ -48,13 +42,13 @@ std::vector<Sample> without_inaudible_bands(const std::vector<Sample>& coefficie
     return audible;
 }
 
-// How many of the lowest bands a budget can afford. The bands above them stay empty. Each band
-// counts about the same for the ear, but the high ones hold far more coefficients. If bits are too
-// short for all bands, it is better to serve the low ones properly than to spread too few bits over
-// everything.
+// How many of the lowest bands a budget can afford, with at least 1 bit for each coded coefficient.
+// The bands above them stay empty. Each band counts about the same for the ear, but the high ones
+// hold far more coefficients. If bits are very short for all bands, it is better to serve the low
+// ones properly than to spread too few bits over everything. Section 6 of spec/codec-spec.md says
+// how this value was chosen.
 std::size_t affordable_band_count(std::size_t max_payload_bytes) noexcept {
-    const std::size_t affordable_coefficients =
-        max_payload_bytes * 8 * kCodedCoefficients / kCodedBits;
+    const std::size_t affordable_coefficients = max_payload_bytes * 8;
     std::size_t bands = kBandCount;
     while (bands > 1 && kBandEdges[bands] > affordable_coefficients) {
         --bands;

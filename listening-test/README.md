@@ -6,8 +6,7 @@ flat noise at the same bitrate?
 
 **Status: prepared, not yet carried out.** The audio has been fetched and the stimuli work, but the
 analysis has only seen made-up ratings, no real listener has taken this test, and the webMUSHRA setup
-has not been run end to end. There are no results to report. The conditions may still change, because
-the [measurements on these excerpts](../eval/README.md#real-music) question the bandwidth limit.
+has not been run end to end. There are no results to report.
 
 ## Design
 

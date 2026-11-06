@@ -281,10 +281,11 @@ TEST(EncodePerceptual, ATonesNoiseStaysBelowItsThresholdAtALowBitrate) {
     EXPECT_GT(at_96k.snr_db, 55);
 }
 
-// With noise in all bands, too few bits spread evenly over the whole spectrum would serve no band
-// properly. This is what the limit on the bandwidth is for. Before it, and with Rice codes before
-// the range coder, the model did clearly worse than flat noise here.
-TEST(EncodePerceptual, BeatsFlatNoiseForBroadbandSignalsAtALowBitrate) {
+// With noise in all bands and few bits, the model does worse than flat noise by this measure: at 83
+// bytes per frame, an excess of about 3.8 dB against 1.4 dB. That is the price of the wider
+// bandwidth, accepted on purpose, see section 6 of the specification. With enough bits, the model
+// must win.
+TEST(EncodePerceptual, BeatsFlatNoiseForBroadbandSignalsWithEnoughBits) {
     const std::vector<Sample> white = test::random_signal(24 * kFrameLength, 64);
     std::vector<Sample> colored(white.size());
     Sample state = 0;
@@ -292,12 +293,17 @@ TEST(EncodePerceptual, BeatsFlatNoiseForBroadbandSignalsAtALowBitrate) {
         state = 0.95 * state + 0.1 * white[n];
         colored[n] = state;
     }
-    const Measurement flat = measure_flat(colored, 83);
-    const Measurement perceptual = measure_perceptual(colored, 83);
-    std::cout << "[allocation] colored noise at 83 bytes per frame: flat excess "
-              << flat.mean_excess << " dB, SNR " << flat.snr_db << " dB; perceptual excess "
-              << perceptual.mean_excess << " dB, SNR " << perceptual.snr_db << " dB\n";
-    EXPECT_LT(perceptual.mean_excess, flat.mean_excess);
+    for (const std::size_t max_bytes : {std::size_t{83}, std::size_t{254}}) {
+        const Measurement flat = measure_flat(colored, max_bytes);
+        const Measurement perceptual = measure_perceptual(colored, max_bytes);
+        std::cout << "[allocation] colored noise at " << max_bytes
+                  << " bytes per frame: flat excess " << flat.mean_excess << " dB, SNR "
+                  << flat.snr_db << " dB; perceptual excess " << perceptual.mean_excess
+                  << " dB, SNR " << perceptual.snr_db << " dB\n";
+        if (max_bytes == 254) {
+            EXPECT_LT(perceptual.mean_excess, flat.mean_excess);
+        }
+    }
 }
 
 TEST(EncodePerceptual, LimitsTheBandwidthAtALowBitrate) {
@@ -317,11 +323,13 @@ TEST(EncodePerceptual, LimitsTheBandwidthAtALowBitrate) {
         }
         return highest;
     };
-    // 83 bytes are 664 bits, which at 1.75 bits per coefficient afford the bands up to coefficient
-    // 379, so the last complete band ends at edge 325.
-    EXPECT_LT(highest_coded(83), 325u);
-    // 254 bytes afford all coefficients, so nothing is cut off.
-    EXPECT_GE(highest_coded(254), 658u);
+    // At 1 bit per coefficient, 40 bytes are 320 bits, so the last complete band ends at edge 274.
+    EXPECT_LT(highest_coded(40), 274u);
+    // 127 bytes are 1016 bits, just too few for the highest band, which ends at 1024.
+    EXPECT_LT(highest_coded(127), 658u);
+    EXPECT_GE(highest_coded(127), 487u);
+    // 128 bytes afford all coefficients, so nothing is cut off.
+    EXPECT_GE(highest_coded(128), 658u);
 }
 
 TEST(EncodePerceptual, NeverExceedsTheBudget) {

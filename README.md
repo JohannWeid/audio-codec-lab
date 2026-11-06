@@ -11,18 +11,17 @@ back. A psychoacoustic model shapes the quantization noise, and an adaptive rang
 result. Reference bitstreams decode to identical PCM on Linux, Windows and macOS, on x86-64 and ARM
 (see [tests/conformance](tests/conformance/README.md)).
 
-Nobody has listened to it in a test yet, so there are no listening results to show. What exists so
-far are measurements on synthetic signals and real excerpts, which show that the noise goes where the
-model wants it:
+Nobody has taken the listening test yet, so there are no listening results to show. What exists so far are
+measurements on synthetic signals and real excerpts, which show that the noise goes where the model wants
+it, close along the masking threshold:
 
 ![Signal, threshold and noise per band for jazz at 48 kbit/s](eval/results/music/masking_jazz_48k.png)
 
-This does not show that it sounds better, and the model's own threshold cannot rank it against AAC or
-Opus. The one independent measure so far, ViSQOL, actually prefers flat noise in 32 of 40 cases on real
-excerpts, mainly because the model limits the bandwidth at low bitrates. With a looser limit, the model
-moves ahead of flat noise from 32 to 64 kbit/s, but then more noise lies above its thresholds at 32 kbit/s.
-Whether that trade is worth it is open until someone listens. The [evaluation](eval/README.md) has all
-measures, what they can and cannot say, the causes found so far, and the known weaknesses.
+This does not show that it sounds better, and the model's own threshold cannot rank it against AAC or Opus.
+By the one independent measure so far, ViSQOL, the model is ahead of flat noise on most real excerpts from
+32 to 64 kbit/s and behind it at 16 and 96 kbit/s, and Opus is ahead of both. The
+[evaluation](eval/README.md) has all measures, what they can and cannot say, how the bandwidth limit was
+chosen, and the known weaknesses.
 
 | Phase | Content | Status |
 |---|---|---|
