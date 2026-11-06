@@ -1,0 +1,69 @@
+# Ablauf des Hörtests vor Ort
+
+Dieses Blatt ist für die Person, die den Test leitet. Die technische Einrichtung steht im
+[README](README.md). Alle Befehle gelten im Hauptordner des Repositorys.
+
+## Einmal vorab
+
+- [ ] **Kabelgebundene Kopfhörer**, für alle dieselben. Kein Bluetooth: Das komprimiert den Ton noch
+      einmal und kann genau die Fehler überdecken, um die es hier geht.
+- [ ] **Windows-Sound:** Einstellungen, System, Sound, das Ausgabegerät wählen. Format auf 48000 Hz
+      stellen, Audioverbesserungen und räumlichen Klang ausschalten.
+- [ ] **Chrome**, keine anderen Programme mit Ton, Benachrichtigungen aus.
+- [ ] **Ruhiger Raum** und ein Termin ohne Zeitdruck.
+- [ ] **Probelauf:** Einmal selbst komplett durchgehen und die Zeit stoppen. Die 30 bis 40 Minuten aus
+      dem Begrüßungstext sind eine Schätzung und noch nicht gemessen.
+- [ ] **Ergebnisordner leeren**, damit der Probelauf nicht mitzählt:
+
+```bash
+rm -rf listening-test/webmushra/results/audio_codec_lab
+```
+
+## Vor dem Testtag
+
+Server starten und das Fenster offen lassen:
+
+```bash
+php -S localhost:8000 -t listening-test/webmushra
+```
+
+Die Adresse in Chrome ist `http://localhost:8000/?config=audio_codec_lab.yaml`.
+
+## Für jede Person
+
+1. **Seite neu laden**, damit die Reihenfolge neu gemischt wird.
+2. **Das hier sagen:**
+
+   > Du hörst kurze Ausschnitte in verschiedenen Qualitäten. „Reference“ ist immer das Original. Daneben
+   > stehen acht Versionen in zufälliger Reihenfolge, und eine davon ist das Original selbst. Höre alle
+   > an und bewerte sie: 100 heißt kein Unterschied zum Original, 0 heißt sehr schlecht. Alle Regler
+   > stehen am Anfang auf 100, stelle also jeden einzelnen bewusst ein. Niemand erwartet, dass du alles
+   > hörst, und es gibt keine falschen Antworten. Zuerst kommt eine Übung, dann acht Durchgänge. Zwischen
+   > den Seiten kannst du jederzeit Pause machen. Stelle die Lautstärke auf der zweiten Seite ein und
+   > lasse sie danach so.
+   >
+   > Gespeichert werden nur deine Bewertungen, dein Kürzel, dein Kopfhörer und deine Hörerfahrung. Die
+   > Bewertungen können ohne Kürzel im Projekt veröffentlicht werden. Ist das für dich in Ordnung?
+
+3. **Neben der Person bleiben, aber nicht auf den Bildschirm schauen** und keine Hinweise geben. Auch
+   über Eindrücke erst sprechen, wenn alle fertig sind, damit niemand die nächsten Hörer beeinflusst.
+4. **Am Ende:** Kürzel eintragen lassen, das noch niemand benutzt hat, und abschicken.
+5. **Prüfen, ob die Daten angekommen sind.** Die Seite bedankt sich auch, wenn das Speichern fehlschlägt:
+
+```bash
+wc -l listening-test/webmushra/results/audio_codec_lab/mushra.csv
+```
+
+   Die Zeilenzahl muss 1 + 72 × Anzahl der Personen sein, also 73 nach der ersten und 145 nach der zweiten.
+
+## Am Ende
+
+Mindestens 8 Personen, besser 12, denn das Post-Screening kann einige ausschließen. Die Testleitung selbst
+zählt nicht mit, wenn sie die Versionen schon kennt.
+
+```bash
+python listening-test/analyze.py listening-test/webmushra/results/audio_codec_lab/mushra.csv
+```
+
+Das schreibt `listening-test/results/results.md` und `listening-test/results/scores.png`. Die Rohdaten
+sicher aufbewahren, denn `listening-test/webmushra` ist nicht im Repository.

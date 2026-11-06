@@ -21,8 +21,8 @@ random order, and the trials are in random order as well.
 | `baseline_32k`, `baseline_64k` | This codec with flat noise, at the same bitrates |
 | `opus_64k` | Opus in hard CBR, as a known point of comparison |
 
-The plan is 8 to 12 listeners with good headphones, and about 30 to 40 minutes for each, including a
-training trial that does not count. The excerpts last 8 to 10 s, as BS.1534 recommends.
+The plan is 8 to 12 listeners, and an estimated 30 to 40 minutes for each, including a training trial
+that does not count. The excerpts last 8 to 10 s, as BS.1534 recommends.
 
 **Known limits:** the codec works in mono, so everything is mixed down to mono and the test says nothing
 about stereo. The excerpts are brought to the same loudness by measurement (EBU R 128, -23 LUFS), where
@@ -86,6 +86,9 @@ http://localhost:8000/?config=audio_codec_lab.yaml
 webMUSHRA stops with an error if the sound device does not run at the rate of the files. In the settings
 of the device, set it to 48 kHz. Each listener needs a different short name when asked for one, because
 release 1.4.3 tells them apart by it, and the analysis refuses a name that occurs twice.
+
+The test runs in person, on one computer with one pair of wired headphones. The sheet for the person who
+leads it is [ablauf.md](ablauf.md), in German, like the instructions for the listeners.
 
 **Watch out for three things in the real test:**
 
