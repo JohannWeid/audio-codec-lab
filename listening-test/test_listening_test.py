@@ -705,7 +705,17 @@ class WithRealTools(unittest.TestCase):
             audio = webmushra / make_stimuli.AUDIO_FOLDER
             for item in self.items:
                 for name in self.names():
-                    self.assertTrue((audio / item.name / f"{name}.wav").exists(), name)
+                    with self.subTest(item=item.name, condition=name):
+                        mono = metrics.read_wav(self.out / item.name / f"{name}.wav")
+                        with wave.open(str(audio / item.name / f"{name}.wav"), "rb") as file:
+                            # webMUSHRA plays a mono file on the left channel only.
+                            self.assertEqual(file.getnchannels(), 2)
+                            self.assertEqual(file.getsampwidth(), 2)
+                            self.assertEqual(file.getframerate(), metrics.SAMPLE_RATE)
+                            frames = file.readframes(file.getnframes())
+                        both = np.frombuffer(frames, dtype="<i2") / 32768
+                        np.testing.assert_array_equal(both[0::2], mono)
+                        np.testing.assert_array_equal(both[1::2], mono)
 
 
 if __name__ == "__main__":

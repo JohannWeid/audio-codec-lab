@@ -25,7 +25,8 @@ The plan is 8 to 12 listeners, and an estimated 30 to 40 minutes for each, inclu
 that does not count. The excerpts last 8 to 10 s, as BS.1534 recommends.
 
 **Known limits:** the codec works in mono, so everything is mixed down to mono and the test says nothing
-about stereo. The excerpts are brought to the same loudness by measurement (EBU R 128, -23 LUFS), where
+about stereo. Listeners hear the same signal in both ears: webMUSHRA would play a mono file on the left
+only, so the copies installed for it carry the signal on both channels. The excerpts are brought to the same loudness by measurement (EBU R 128, -23 LUFS), where
 BS.1534 asks for a group of experts to agree on it. Most listeners will not be trained experts, which
 makes small differences harder to detect.
 

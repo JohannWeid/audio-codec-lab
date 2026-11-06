@@ -371,12 +371,29 @@ def repair_result_service(webmushra: Path) -> None:
     path.write_bytes(repaired.encode("latin-1"))
 
 
+def copy_to_both_channels(source: Path, target: Path) -> None:
+    """Writes a mono file as a stereo file with the same samples on both channels.
+
+    webMUSHRA sets the audio output to discrete channels, so a mono file plays on the left only.
+    """
+    with wave.open(str(source), "rb") as file:
+        rate = file.getframerate()
+        samples = np.frombuffer(file.readframes(file.getnframes()), dtype="<i2")
+    with wave.open(str(target), "wb") as file:
+        file.setnchannels(2)
+        file.setsampwidth(2)
+        file.setframerate(rate)
+        file.writeframes(np.repeat(samples, 2).tobytes())
+
+
 def install_into_webmushra(out: Path, webmushra: Path, items: list[Item]) -> None:
     repair_result_service(webmushra)
     audio = webmushra / AUDIO_FOLDER
-    audio.mkdir(parents=True, exist_ok=True)
     for item in items:
-        shutil.copytree(out / item.name, audio / item.name, dirs_exist_ok=True)
+        folder = audio / item.name
+        folder.mkdir(parents=True, exist_ok=True)
+        for source in sorted((out / item.name).glob("*.wav")):
+            copy_to_both_channels(source, folder / source.name)
     shutil.copy(out / "mushra.yaml", webmushra / "configs" / f"{TEST_ID}.yaml")
     print(f"Installed. The address is http://localhost:8000/?config={TEST_ID}.yaml")
 

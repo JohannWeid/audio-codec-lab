@@ -12,7 +12,8 @@ Dieses Blatt ist für die Person, die den Test leitet. Die technische Einrichtun
 - [ ] **Chrome**, keine anderen Programme mit Ton, Benachrichtigungen aus.
 - [ ] **Ruhiger Raum** und ein Termin ohne Zeitdruck.
 - [ ] **Probelauf:** Einmal selbst komplett durchgehen und die Zeit stoppen. Die 30 bis 40 Minuten aus
-      dem Begrüßungstext sind eine Schätzung und noch nicht gemessen.
+      dem Begrüßungstext sind eine Schätzung und noch nicht gemessen. Dabei prüfen, ob der Ton auf beiden
+      Ohren gleich laut ankommt.
 - [ ] **Ergebnisordner leeren**, damit der Probelauf nicht mitzählt:
 
 ```bash
