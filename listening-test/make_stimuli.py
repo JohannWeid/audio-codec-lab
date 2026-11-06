@@ -32,6 +32,10 @@ MOST_SIGNALS_PER_TRIAL = 12
 AUDIO_FOLDER = "configs/resources/audio_codec_lab"
 TRAINING_CATEGORY = "training"
 REFERENCES_FOLDER = "references"
+MAGIC_QUOTES_CHECK = re.compile(
+    r"if\s*\(\s*get_magic_quotes_gpc\(\)\s*\)\s*\{.*?\}\s*else\s*\{\s*(.*?;)\s*\}", re.DOTALL
+)
+COUNT_OF_A_VARIABLE = re.compile(r"\bcount\((\$[^()]*)\)")
 
 
 @dataclass(frozen=True)
@@ -73,14 +77,14 @@ TEXT = {
     "training_name": "Übung",
     "training": (
         "Dies ist eine Übung, sie wird nicht gewertet. <b>Reference</b> ist das Original. Die "
-        "Buttons darunter sind Versionen in zufälliger Reihenfolge, eine davon ist das Original "
+        "Buttons daneben sind Versionen in zufälliger Reihenfolge, eine davon ist das Original "
         "selbst. Höre alle an und bewerte sie mit den Reglern: 100 heißt kein Unterschied zum "
-        "Original. Mindestens eine Version muss die volle Punktzahl bekommen."
+        "Original. <b>Alle Regler stehen anfangs auf 100, stelle also jeden einzelnen bewusst "
+        "ein.</b> Das versteckte Original sollte 100 bekommen."
     ),
     "trial": (
-        "Vergleiche jede Version mit <b>Reference</b> und bewerte sie von 0 bis 100. Du kannst so "
-        "oft wechseln, wie du möchtest, und mit den Reglern unter der Wellenform einen kurzen "
-        "Abschnitt in Schleife hören."
+        "Höre jede Version an und stelle jeden Regler bewusst ein, 100 heißt kein Unterschied zu "
+        "<b>Reference</b>. Du kannst so oft wechseln, wie du möchtest."
     ),
     "finish_name": "Danke",
     "finish": "Vielen Dank fürs Mitmachen! Bitte schicke die Ergebnisse jetzt ab.",
@@ -347,7 +351,28 @@ def make_stimuli(items: list[Item], tools: Path, source_folder: Path, out: Path)
     return report
 
 
+def repair_result_service(webmushra: Path) -> None:
+    """Makes the service of webMUSHRA 1.4.3 work on PHP 8.
+
+    PHP 8 removed a function that the service calls, so it fails on every call, and the page thanks
+    the listener all the same: all ratings are lost without any notice. PHP 8 also no longer accepts
+    count(null), which the service reaches for each type of test that a session did not use. Only the
+    copy in the given folder changes.
+    """
+    path = webmushra / "service" / "write.php"
+    if not path.exists():
+        return
+    # The file is not necessarily UTF-8, and Latin-1 brings back every byte as it was.
+    text = path.read_bytes().decode("latin-1")
+    repaired = MAGIC_QUOTES_CHECK.sub(r"\1", text)
+    repaired = COUNT_OF_A_VARIABLE.sub(r"count((array)\1)", repaired)
+    if "get_magic_quotes_gpc" in repaired:
+        raise ValueError(f"{path} has an unknown form, so it could not be repaired")
+    path.write_bytes(repaired.encode("latin-1"))
+
+
 def install_into_webmushra(out: Path, webmushra: Path, items: list[Item]) -> None:
+    repair_result_service(webmushra)
     audio = webmushra / AUDIO_FOLDER
     audio.mkdir(parents=True, exist_ok=True)
     for item in items:

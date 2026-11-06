@@ -4,9 +4,9 @@ A MUSHRA test following [ITU-R BS.1534-3](https://www.itu.int/rec/R-REC-BS.1534)
 question of this project: does the codec with its masking model sound better than the same codec with
 flat noise at the same bitrate?
 
-**Status: prepared, not yet carried out.** The audio has been fetched and the stimuli work, but the
-analysis has only seen made-up ratings, no real listener has taken this test, and the webMUSHRA setup
-has not been run end to end. There are no results to report.
+**Status: prepared, not yet carried out.** The whole path has been run once with test listeners who were
+driven by a script: stimuli, webMUSHRA on PHP 8.5, saved results and their analysis. No real listener has
+taken this test, so there are no results to report.
 
 ## Design
 
@@ -64,8 +64,10 @@ python listening-test/make_stimuli.py --tools build/default
 ```
 
 The test itself runs on [webMUSHRA](https://github.com/audiolabs/webMUSHRA), which is not part of this
-repository. Unpack release 1.4.3 into `listening-test/webmushra`, which Git ignores, and copy everything
-into it:
+repository. Unpack
+[release 1.4.3](https://github.com/audiolabs/webMUSHRA/releases/download/v1.4.3/webMUSHRA-1.4.3.zip) into
+`listening-test/webmushra`, which Git ignores, and copy everything into it. This also repairs the copy of
+its `service/write.php` for PHP 8:
 
 ```bash
 python listening-test/make_stimuli.py --tools build/default --webmushra listening-test/webmushra
@@ -82,8 +84,16 @@ http://localhost:8000/?config=audio_codec_lab.yaml
 ```
 
 webMUSHRA stops with an error if the sound device does not run at the rate of the files. In the settings
-of the device, set it to 48 kHz. On the same computer, each listener needs a different short name when
-asked for one, because release 1.4.3 tells them apart by it.
+of the device, set it to 48 kHz. Each listener needs a different short name when asked for one, because
+release 1.4.3 tells them apart by it, and the analysis refuses a name that occurs twice.
+
+**Watch out for three things in the real test:**
+
+- **Check that results arrive.** webMUSHRA thanks the listener even if saving failed. After the first
+  listener, look for `results/audio_codec_lab/mushra.csv` in its folder.
+- **Sliders start at 100, and nothing is enforced.** A listener can go on without playing anything, and a
+  slider left alone counts as no difference. The instructions say so, but tell listeners in person too.
+- **Start with an empty results folder**, so that no trial runs end up among the real ratings.
 
 ## Evaluate the results
 
@@ -98,7 +108,8 @@ BS.1534-3:
 
 - **Post-screening.** A listener is excluded for rating the hidden reference below 90, or the 7 kHz
   anchor above 90, on more than 15 % of the items. If over 25 % of the listeners rate the anchor above 90
-  on an item, then that item counts against nobody.
+  on an item, then that item counts against nobody. So the anchor rule needs enough listeners: with 3, a
+  single careless one is already 33 % and stays in, with 8 they are excluded. The report names such items.
 - **Means and medians.** The 95 % intervals come from bootstrapping, because a small sample may not be
   normally distributed. Over all items, the mean per listener is the unit, since several ratings by one
   person are not independent.

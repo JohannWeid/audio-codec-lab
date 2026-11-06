@@ -421,6 +421,55 @@ class Stimuli(unittest.TestCase):
         self.assertEqual(text.count("createAnchor35: false"), 3)
         self.assertEqual(text.count("createAnchor70: false"), 3)
 
+    def test_the_participants_are_told_that_all_sliders_start_at_100(self):
+        # webMUSHRA enforces nothing here, and a slider left alone counts as no difference.
+        self.assertIn("anfangs auf 100", make_stimuli.TEXT["training"])
+        self.assertIn("jeden Regler bewusst", make_stimuli.TEXT["trial"])
+
+    def write_service(self, folder: str, text: bytes) -> Path:
+        path = Path(folder) / "service" / "write.php"
+        path.parent.mkdir()
+        path.write_bytes(text)
+        return path
+
+    def test_the_result_service_is_repaired_for_php_8(self):
+        # The form in release 1.4.3, with a byte that is not valid UTF-8 in a comment.
+        original = (
+            b"<?php\r\n// (C) \xe9\r\n$sessionParam = null;\r\n"
+            b"if(get_magic_quotes_gpc()){\r\n"
+            b"  $sessionParam = stripslashes($_POST['sessionJSON']);\r\n"
+            b"}else{\r\n"
+            b"  $sessionParam = $_POST['sessionJSON'];\r\n"
+            b"}\r\n"
+            b"$session = json_decode($sessionParam);\r\n"
+            b"$length = count($session->participant->name);\r\n"
+            b"for($i = 0; $i < count($trial->stimulusRating); $i++){\r\n"
+        )
+        with tempfile.TemporaryDirectory() as folder:
+            path = self.write_service(folder, original)
+            make_stimuli.repair_result_service(Path(folder))
+            repaired = path.read_bytes()
+            # Repairing twice changes nothing.
+            make_stimuli.repair_result_service(Path(folder))
+            self.assertEqual(path.read_bytes(), repaired)
+        self.assertNotIn(b"get_magic_quotes_gpc", repaired)
+        self.assertNotIn(b"stripslashes", repaired)
+        self.assertIn(b"$sessionParam = $_POST['sessionJSON'];", repaired)
+        self.assertIn(b"\xe9", repaired)
+        self.assertIn(b"$session = json_decode($sessionParam);\r\n", repaired)
+        self.assertIn(b"$length = count((array)$session->participant->name);", repaired)
+        self.assertIn(b"$i < count((array)$trial->stimulusRating);", repaired)
+
+    def test_a_result_service_of_an_unknown_form_is_reported(self):
+        with tempfile.TemporaryDirectory() as folder:
+            self.write_service(folder, b"<?php\n$x = get_magic_quotes_gpc();\n")
+            with self.assertRaises(ValueError):
+                make_stimuli.repair_result_service(Path(folder))
+
+    def test_a_folder_without_a_result_service_is_fine(self):
+        with tempfile.TemporaryDirectory() as folder:
+            make_stimuli.repair_result_service(Path(folder))
+
     def test_too_many_conditions_are_refused(self):
         many = tuple(make_stimuli.Condition(f"c{i}", "model", 64000) for i in range(12))
         with self.assertRaises(ValueError):
@@ -644,7 +693,14 @@ class WithRealTools(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             webmushra = Path(folder)
             (webmushra / "configs").mkdir()
+            (webmushra / "service").mkdir()
+            service = webmushra / "service" / "write.php"
+            service.write_text(
+                "if(get_magic_quotes_gpc()){\n  $a = stripslashes($b);\n}else{\n  $a = $b;\n}\n",
+                encoding="ascii",
+            )
             make_stimuli.install_into_webmushra(self.out, webmushra, self.items)
+            self.assertNotIn("get_magic_quotes_gpc", service.read_text(encoding="ascii"))
             self.assertTrue((webmushra / "configs" / f"{make_stimuli.TEST_ID}.yaml").exists())
             audio = webmushra / make_stimuli.AUDIO_FOLDER
             for item in self.items:
