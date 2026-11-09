@@ -250,6 +250,20 @@ class WholeAnalysis(unittest.TestCase):
         self.assertIn("| model_64k | 80.0 |", report)
         self.assertIn("| baseline_64k | 50.0 |", report)
 
+    def test_nobody_left_after_the_post_screening_is_reported(self):
+        table = {"L0": good_listener(ITEMS)}
+        for item in ITEMS:
+            table["L0"][item]["reference"] = 50
+        with tempfile.TemporaryDirectory() as folder:
+            out = Path(folder)
+            screening, comparisons = analyze.analyze(ratings_of(table), out)
+            report = (out / "results.md").read_text(encoding="utf-8")
+            self.assertFalse((out / "scores.png").exists())
+        self.assertEqual(screening.kept, [])
+        self.assertEqual(comparisons, [])
+        self.assertIn("No listener is left", report)
+        self.assertIn("hidden reference below 90", report)
+
     def test_an_item_only_an_excluded_listener_rated_does_not_appear(self):
         table = {f"L{i}": good_listener(ITEMS) for i in range(8)}
         for item in ITEMS:

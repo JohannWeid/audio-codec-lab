@@ -65,7 +65,7 @@ TEXT = {
     "welcome_name": "Willkommen",
     "welcome": (
         "Dieser Hörtest vergleicht verschieden stark komprimierte Versionen von kurzen "
-        "Audioausschnitten. Er dauert etwa 30 bis 40 Minuten, und du kannst zwischendurch Pausen "
+        "Audioausschnitten. Er dauert etwa 15 bis 20 Minuten, und du kannst zwischendurch Pausen "
         "machen. Bitte nutze gute Kopfhörer in einer ruhigen Umgebung und den Browser Chrome. "
         "Bewertet wird das Gehör, nicht du: Es gibt keine falschen Antworten."
     ),

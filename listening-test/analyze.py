@@ -236,6 +236,10 @@ def write_report(
         lines += [f"- {reason}"]
     if screening.excluded:
         lines += [""]
+    if not screening.kept:
+        lines += ["No listener is left, so there is nothing to evaluate.", ""]
+        path.write_text("\n".join(lines), encoding="utf-8")
+        return
     if screening.uninformative_anchor_items:
         names = ", ".join(screening.uninformative_anchor_items)
         lines += [f"Items where the mid anchor was rated too high to count: {names}.", ""]
@@ -328,6 +332,10 @@ def plot_results(
 def analyze(ratings: list[Rating], out: Path) -> tuple[Screening, list[Comparison]]:
     rng = np.random.default_rng(SEED)
     screening = post_screen(ratings)
+    out.mkdir(parents=True, exist_ok=True)
+    if not screening.kept:
+        write_report(out / "results.md", screening, [], {}, [])
+        return screening, []
     kept = [r for r in ratings if r.listener in set(screening.kept)]
     items = items_of(kept)
     conditions = conditions_of(kept)
