@@ -39,7 +39,7 @@ Die Adresse in Chrome ist `http://localhost:8000/?config=audio_codec_lab.yaml`.
 2. **Das hier sagen:**
 
    > Du hörst kurze Ausschnitte in verschiedenen Qualitäten. „Reference“ ist immer das Original. Daneben
-   > stehen acht Versionen in zufälliger Reihenfolge, und eine davon ist das Original selbst. Höre alle
+   > stehen neun Versionen in zufälliger Reihenfolge, und eine davon ist das Original selbst. Höre alle
    > an und bewerte sie: 100 heißt kein Unterschied zum Original, 0 heißt sehr schlecht. Alle Regler
    > stehen am Anfang auf 100, stelle also jeden einzelnen bewusst ein. Lass dir Zeit und höre jede
    > Version ganz an, gern mehrmals. Niemand erwartet, dass du alles hörst, und es gibt keine falschen
@@ -58,8 +58,8 @@ Die Adresse in Chrome ist `http://localhost:8000/?config=audio_codec_lab.yaml`.
 wc -l listening-test/webmushra/results/audio_codec_lab/mushra.csv
 ```
 
-   Die Zeilenzahl muss 1 + 72 × Anzahl der Personen sein, also 73 nach der ersten und 145 nach der
-   zweiten.
+   Die Zeilenzahl muss 1 + 81 × Anzahl der Personen sein, also 82 nach der ersten und 163 nach der
+   zweiten: neun Seiten mit je neun Versionen.
 
 ## Am Ende
 

@@ -27,7 +27,11 @@ TRIAL_PREFIX = "trial_"
 RESAMPLES = 10000
 SEED = 1534
 MOST_LISTENERS_FOR_EXACT_TEST = 16
-COMPARED_PAIRS = (("model_32k", "baseline_32k"), ("model_64k", "baseline_64k"))
+COMPARED_PAIRS = (
+    ("model_32k", "baseline_32k"),
+    ("model_64k", "baseline_64k"),
+    ("model_32k", "model_32k_old_limit"),
+)
 
 
 @dataclass(frozen=True)
@@ -244,7 +248,8 @@ def write_report(
         names = ", ".join(screening.uninformative_anchor_items)
         lines += [f"Items where the mid anchor was rated too high to count: {names}.", ""]
 
-    lines += ["## Model against baseline at the same bitrate", ""]
+    lines += ["## Comparisons at the same bitrate", ""]
+    lines += ["A positive difference means that the first condition got the higher score.", ""]
     lines += ["| Comparison | Mean difference | 95 % interval | p | Listeners |"]
     lines += ["|---|---:|---:|---:|---:|"]
     for c in comparisons:

@@ -19,9 +19,12 @@ constexpr int kExitUsage = 2;
 int usage() {
     std::cerr << "codec-encode " << codec::version() << "\n"
               << "usage: codec-encode in.wav out.bin --bitrate 64000 [--psy on|off]\n"
+              << "                    [--bandwidth-limit 1]\n"
               << "The input must be 16-bit PCM, 48 kHz, mono. The bitrate is in bit/s, from "
               << codec::kMinBitrate << " to " << codec::kMaxBitrate << ".\n"
-              << "--psy off selects the baseline with flat noise instead of the masking model.\n";
+              << "--psy off selects the baseline with flat noise instead of the masking model.\n"
+              << "--bandwidth-limit 1.75 lets the model code only the bands that leave 1.75 bits\n"
+              << "per coefficient, for experiments. The default is 1.\n";
     return kExitUsage;
 }
 

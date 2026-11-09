@@ -45,15 +45,18 @@ class Condition:
     name: str
     kind: str
     bitrate: int = 0
+    bandwidth_limit: str = ""
 
 
 # The anchors are the two of ITU-R BS.1534-3. webMUSHRA adds the hidden reference by itself and calls
 # it "reference". The baseline runs at each bitrate of the model, since the question is whether the
-# model sounds better at the same bitrate.
+# model sounds better at the same bitrate. The model with the earlier bandwidth limit of 1.75 bits
+# tests the choice of 1 bit, which otherwise rests on ViSQOL and one informal comparison by ear.
 CONDITIONS = (
     Condition("anchor35", "lowpass", 3500),
     Condition("anchor70", "lowpass", 7000),
     Condition("model_32k", "model", 32000),
+    Condition("model_32k_old_limit", "model", 32000, "1.75"),
     Condition("baseline_32k", "baseline", 32000),
     Condition("model_64k", "model", 64000),
     Condition("baseline_64k", "baseline", 64000),
@@ -228,7 +231,8 @@ def make_condition(
         return
     if condition.kind in ("model", "baseline"):
         psy = "on" if condition.kind == "model" else "off"
-        decoded, _ = evaluate.code_own(tools, reference, work, condition.bitrate, psy)
+        options = ("--bandwidth-limit", condition.bandwidth_limit) if condition.bandwidth_limit else ()
+        decoded, _ = evaluate.code_own(tools, reference, work, condition.bitrate, psy, options)
     else:
         decoded, _ = evaluate.code_foreign(condition.kind, reference, work, condition.bitrate)
     write_wav(target, evaluate.fitted_to(metrics.read_wav(decoded), len(original)))

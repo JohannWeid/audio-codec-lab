@@ -188,6 +188,47 @@ TEST(Encoder, RejectsWhatTheSpecificationExcludes) {
     EXPECT_THROW(encode_at(Pcm(100), codec::kMaxBitrate + 1), std::invalid_argument);
 }
 
+TEST(Encoder, AcceptsBandwidthLimitsOnlyInTheirRange) {
+    for (const std::uint32_t eighths : {0u, 65u}) {
+        for (const bool psychoacoustics : {true, false}) {
+            // Also for the baseline, which does not use the limit, so that no wrong value passes.
+            SCOPED_TRACE(testing::Message() << eighths << " psy=" << psychoacoustics);
+            EncoderOptions options;
+            options.bandwidth_limit_eighths = eighths;
+            options.psychoacoustics = psychoacoustics;
+            EXPECT_THROW(encode(make_audio(Pcm(100)), options), std::invalid_argument);
+            EXPECT_THROW(codec::report_encoding(make_audio(Pcm(100)), options),
+                         std::invalid_argument);
+        }
+    }
+    for (const std::uint32_t eighths : {1u, 64u}) {
+        SCOPED_TRACE(eighths);
+        EncoderOptions options;
+        options.bandwidth_limit_eighths = eighths;
+        EXPECT_NO_THROW(encode(make_audio(Pcm(100)), options));
+    }
+}
+
+// The default of 1 bit per coefficient comes from section 6 of the specification. Other values are
+// for experiments, such as the listening test, which compares 1 bit with the earlier 1.75 bits.
+TEST(Encoder, BandwidthLimitChangesOnlyTheModel) {
+    EXPECT_EQ(EncoderOptions{}.bandwidth_limit_eighths, 8u);
+    const WavAudio broadband = make_audio(noise(0.5, 8 * kFrameLength, 47));
+    EncoderOptions model;
+    model.bitrate = 32000;
+    EncoderOptions explicit_default = model;
+    explicit_default.bandwidth_limit_eighths = 8;
+    EncoderOptions earlier_limit = model;
+    earlier_limit.bandwidth_limit_eighths = 14;
+    EXPECT_EQ(encode(broadband, model), encode(broadband, explicit_default));
+    EXPECT_NE(encode(broadband, model), encode(broadband, earlier_limit));
+
+    // The baseline has no limit, whatever the option says.
+    model.psychoacoustics = false;
+    earlier_limit.psychoacoustics = false;
+    EXPECT_EQ(encode(broadband, model), encode(broadband, earlier_limit));
+}
+
 TEST(Encoder, GivesTheSameBitstreamForTheSameInput) {
     const Pcm input = mixture(8000);
     for (const bool psychoacoustics : {false, true}) {

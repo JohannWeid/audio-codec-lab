@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
+#include <stdexcept>
 #include <vector>
 
 #include "codec/allocation.hpp"
@@ -312,9 +313,9 @@ TEST(EncodePerceptual, LimitsTheBandwidthAtALowBitrate) {
     analysis.masking_threshold = equal_values(1e-6);
     analysis.quiet_threshold = equal_values(1e-9);
 
-    const auto highest_coded = [&](std::size_t max_bytes) {
+    const auto highest_coded = [&](std::size_t max_bytes, std::uint32_t eighths = 8) {
         const EncodedFrame result =
-            encode_perceptual(coefficients, analysis, max_bytes, FrameCoderState{});
+            encode_perceptual(coefficients, analysis, max_bytes, FrameCoderState{}, eighths);
         std::size_t highest = 0;
         for (std::size_t k = 0; k < kFrameLength; ++k) {
             if (result.frame.quantized[k] != 0) {
@@ -330,6 +331,23 @@ TEST(EncodePerceptual, LimitsTheBandwidthAtALowBitrate) {
     EXPECT_GE(highest_coded(127), 487u);
     // 128 bytes afford all coefficients, so nothing is cut off.
     EXPECT_GE(highest_coded(128), 658u);
+    // The earlier limit of 1.75 bits, or 14 eighths: 83 bytes are 664 bits, which afford the bands
+    // up to coefficient 379, so the last complete band ends at edge 325. At 1 bit, they reach 487
+    // and more.
+    EXPECT_LT(highest_coded(83, 14), 325u);
+    EXPECT_GE(highest_coded(83, 8), 487u);
+}
+
+TEST(EncodePerceptual, RejectsABandwidthLimitOutOfRange) {
+    const std::vector<Sample> coefficients = test::random_signal(kFrameLength, 66);
+    MaskingAnalysis analysis;
+    analysis.masking_threshold = equal_values(1e-6);
+    analysis.quiet_threshold = equal_values(1e-9);
+    for (const std::uint32_t eighths : {0u, 65u}) {
+        SCOPED_TRACE(eighths);
+        EXPECT_THROW(encode_perceptual(coefficients, analysis, 100, FrameCoderState{}, eighths),
+                     std::invalid_argument);
+    }
 }
 
 TEST(EncodePerceptual, NeverExceedsTheBudget) {

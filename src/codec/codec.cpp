@@ -29,6 +29,10 @@ void check_encoder_input(const WavAudio& audio, const EncoderOptions& options) {
     if (options.bitrate < kMinBitrate || options.bitrate > kMaxBitrate) {
         throw std::invalid_argument("the bitrate must be in 8000 to 512000 bit/s");
     }
+    if (options.bandwidth_limit_eighths < kMinBandwidthLimitEighths ||
+        options.bandwidth_limit_eighths > kMaxBandwidthLimitEighths) {
+        throw std::invalid_argument("the bandwidth limit must be 0.125 to 8 bits per coefficient");
+    }
 }
 
 // The one loop over all frames of the encoder, so that encode() and report_encoding() cannot
@@ -44,10 +48,11 @@ void encode_frames(const WavAudio& audio, const EncoderOptions& options, OnFrame
         const std::uint32_t budget = frame_budget_bits(i, options.bitrate);
         const std::size_t max_payload_bytes = (budget - kLengthFieldBits) / 8;
         const std::vector<Sample> coefficients = mdct.forward(blocks[i]);
-        const EncodedFrame encoded = options.psychoacoustics
-                                         ? encode_perceptual(coefficients, model.analyze(blocks[i]),
-                                                             max_payload_bytes, state)
-                                         : encode_flat(coefficients, max_payload_bytes, state);
+        const EncodedFrame encoded =
+            options.psychoacoustics
+                ? encode_perceptual(coefficients, model.analyze(blocks[i]), max_payload_bytes,
+                                    state, options.bandwidth_limit_eighths)
+                : encode_flat(coefficients, max_payload_bytes, state);
         on_frame(blocks[i], coefficients, encoded, budget);
         state = encoded.state;
     }

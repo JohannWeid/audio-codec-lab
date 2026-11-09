@@ -20,6 +20,7 @@ constexpr int kExitUsage = 2;
 int usage() {
     std::cerr << "codec-analyze " << codec::version() << "\n"
               << "usage: codec-analyze in.wav out.csv --bitrate 64000 [--psy on|off]\n"
+              << "                     [--bandwidth-limit 1]\n"
               << "Writes one line per frame and band: the energy, thresholds and noise that the\n"
               << "encoder sees, on the scale of the MDCT coefficients. See eval/README.md.\n";
     return kExitUsage;

@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "codec/allocation.hpp"
 #include "codec/frame.hpp"
 #include "codec/psychoacoustics.hpp"
 #include "codec/wav.hpp"
@@ -18,14 +19,18 @@ struct EncoderOptions {
     std::uint32_t bitrate = 64000;
     /// Off selects the flat noise allocation of the baseline, see section 7 of spec/codec-spec.md.
     bool psychoacoustics = true;
+    /// The bandwidth limit of the model, in eighths of a bit per coded coefficient. Only for
+    /// experiments: the default is the value that section 6 of spec/codec-spec.md explains, and the
+    /// baseline has no limit at all.
+    std::uint32_t bandwidth_limit_eighths = kDefaultBandwidthLimitEighths;
 };
 
 /// Number of bits that frame frame_index may use, including its length field. The sum over the
 /// frames follows the bitrate exactly, see section 6 of spec/codec-spec.md.
 std::uint32_t frame_budget_bits(std::uint64_t frame_index, std::uint32_t bitrate) noexcept;
 
-/// Encodes 48 kHz mono audio. Throws std::invalid_argument for other audio or for a bitrate outside
-/// of kMinBitrate to kMaxBitrate.
+/// Encodes 48 kHz mono audio. Throws std::invalid_argument for other audio, for a bitrate outside
+/// of kMinBitrate to kMaxBitrate, or for a bandwidth limit outside of its range.
 std::vector<std::uint8_t> encode(const WavAudio& audio, const EncoderOptions& options);
 
 /// What happened in one frame of the encoder. All energies are on the scale of the MDCT

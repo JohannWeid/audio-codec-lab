@@ -52,10 +52,12 @@ def tool(folder: Path, name: str) -> Path:
     raise FileNotFoundError(f"{name} is not in {folder}")
 
 
-def code_own(tools: Path, item: Path, work: Path, bitrate: int, psy: str) -> tuple[Path, int]:
+def code_own(
+    tools: Path, item: Path, work: Path, bitrate: int, psy: str, options: tuple = ()
+) -> tuple[Path, int]:
     stream = work / "stream.bin"
     decoded = work / "decoded.wav"
-    run(tool(tools, "codec-encode"), item, stream, "--bitrate", bitrate, "--psy", psy)
+    run(tool(tools, "codec-encode"), item, stream, "--bitrate", bitrate, "--psy", psy, *options)
     run(tool(tools, "codec-decode"), stream, decoded)
     return decoded, stream.stat().st_size
 

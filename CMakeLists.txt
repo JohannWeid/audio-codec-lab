@@ -82,6 +82,7 @@ add_executable(codec_tests
   tests/test_bitstream.cpp
   tests/test_codec.cpp
   tests/test_conformance.cpp
+  tests/test_encoder_arguments.cpp
   tests/test_entropy.cpp
   tests/test_fft.cpp
   tests/test_floating_point.cpp

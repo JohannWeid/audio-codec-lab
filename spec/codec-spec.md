@@ -227,8 +227,10 @@ high ones hold far more coefficients, so with very few bits it is better to serv
 The first value of 1.75 bits came from the mean excess on synthetic signals. On real excerpts, ViSQOL
 then preferred flat noise in most cases, and the limit was the main reason. At 1 bit, the score at 32
 kbit/s rises from 2.04 to 3.96, for a mean excess of 2.36 dB instead of 1.44 dB. An informal comparison by
-ear by one person preferred 1 bit. This still has to be confirmed by the listening test, see the
-[evaluation](../eval/README.md#how-the-bandwidth-limit-was-chosen). The bandwidth stays the same from frame
+ear by one person preferred 1 bit, and the listening test compares both, see the
+[evaluation](../eval/README.md#how-the-bandwidth-limit-was-chosen). For such experiments, the encoder
+option `--bandwidth-limit` sets other values in steps of 1/8 bit, from 0.125 to 8 bits. It changes only
+which bands the encoder codes, not the bitstream format. The bandwidth stays the same from frame
 to frame, which avoids the audible flicker that a limit changing with the signal can cause. It applies to
 the model only, not to the baseline.
 

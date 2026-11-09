@@ -76,8 +76,10 @@ codec-decode out.bin out.wav
 ```
 
 `--psy off` selects the baseline for comparison: the same codec with flat noise instead of the
-psychoacoustic model. `codec-analyze` takes the same arguments as `codec-encode` and writes a table
-with the energy, thresholds and noise per frame and band, see [eval](eval/README.md).
+psychoacoustic model. `--bandwidth-limit 1.75` sets the bandwidth limit of the model to another number
+of bits per coefficient, for experiments; the default is 1. `codec-analyze` takes the same arguments as
+`codec-encode` and writes a table with the energy, thresholds and noise per frame and band, see
+[eval](eval/README.md).
 
 ## Repository layout
 

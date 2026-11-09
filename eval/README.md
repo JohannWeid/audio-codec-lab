@@ -154,7 +154,9 @@ At 1 bit, the whole gain at 32 and 48 kbit/s is there, and nothing looser adds t
 the excerpts lie below the threshold in quiet above 15.4 kHz. The price is the higher excess at 32 kbit/s.
 That is a choice between dull and noisier, which measures cannot settle. One person compared the versions by
 ear at 32 kbit/s, on a page with the versions in random order, and preferred 1 bit. That is no test result,
-so the listening test still has to confirm it. These comparisons do not come from the scripts here.
+so the listening test includes the model with the earlier limit at 32 kbit/s as a condition of its own. The
+encoder option `--bandwidth-limit 1.75` produces it. The comparisons in this section do not come from the
+scripts here.
 
 ### Synthetic signals
 

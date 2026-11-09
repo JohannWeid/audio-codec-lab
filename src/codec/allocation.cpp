@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <stdexcept>
 #include <utility>
 
 #include "codec/quantizer.hpp"
@@ -42,13 +43,13 @@ std::vector<Sample> without_inaudible_bands(const std::vector<Sample>& coefficie
     return audible;
 }
 
-// How many of the lowest bands a budget can afford, with at least 1 bit for each coded coefficient.
-// The bands above them stay empty. Each band counts about the same for the ear, but the high ones
-// hold far more coefficients. If bits are very short for all bands, it is better to serve the low
-// ones properly than to spread too few bits over everything. Section 6 of spec/codec-spec.md says
-// how this value was chosen.
-std::size_t affordable_band_count(std::size_t max_payload_bytes) noexcept {
-    const std::size_t affordable_coefficients = max_payload_bytes * 8;
+// How many of the lowest bands a budget can afford, with at least the given eighths of a bit for
+// each coded coefficient. The bands above them stay empty. Each band counts about the same for the
+// ear, but the high ones hold far more coefficients. If bits are very short for all bands, it is
+// better to serve the low ones properly than to spread too few bits over everything.
+std::size_t affordable_band_count(std::size_t max_payload_bytes,
+                                  std::uint32_t bandwidth_limit_eighths) noexcept {
+    const std::size_t affordable_coefficients = max_payload_bytes * 8 * 8 / bandwidth_limit_eighths;
     std::size_t bands = kBandCount;
     while (bands > 1 && kBandEdges[bands] > affordable_coefficients) {
         --bands;
@@ -126,11 +127,18 @@ EncodedFrame encode_flat(const std::vector<Sample>& coefficients, std::size_t ma
 
 EncodedFrame encode_perceptual(const std::vector<Sample>& coefficients,
                                const MaskingAnalysis& analysis, std::size_t max_payload_bytes,
-                               const FrameCoderState& state) {
+                               const FrameCoderState& state,
+                               std::uint32_t bandwidth_limit_eighths) {
+    if (bandwidth_limit_eighths < kMinBandwidthLimitEighths ||
+        bandwidth_limit_eighths > kMaxBandwidthLimitEighths) {
+        throw std::invalid_argument("the bandwidth limit must be 1 to 64 eighths of a bit");
+    }
     std::vector<Sample> audible = without_inaudible_bands(coefficients, analysis.quiet_threshold);
-    std::fill(audible.begin() +
-                  static_cast<std::ptrdiff_t>(kBandEdges[affordable_band_count(max_payload_bytes)]),
-              audible.end(), Sample{0});
+    std::fill(
+        audible.begin() +
+            static_cast<std::ptrdiff_t>(
+                kBandEdges[affordable_band_count(max_payload_bytes, bandwidth_limit_eighths)]),
+        audible.end(), Sample{0});
     return encode_with_scalefactors(
         audible, scalefactors_for_thresholds(analysis.masking_threshold), max_payload_bytes, state);
 }

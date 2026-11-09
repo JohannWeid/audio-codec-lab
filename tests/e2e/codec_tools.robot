@@ -117,6 +117,10 @@ Encoder Reports Wrong Usage
     Should Fail With Code    2    ${ENCODER}    ${input}    ${WORK}${/}out.bin    third_file    --bitrate    64000
     Should Fail With Code    2    ${ENCODER}    ${input}    ${WORK}${/}out.bin    --bitrate    64000    --psy
     Should Fail With Code    2    ${ENCODER}    ${input}    ${WORK}${/}out.bin    --bitrate    64000    --psy    maybe
+    Should Fail With Code    2    ${ENCODER}    ${input}    ${WORK}${/}out.bin    --bitrate    64000    --bandwidth-limit
+    Should Fail With Code    2    ${ENCODER}    ${input}    ${WORK}${/}out.bin    --bitrate    64000    --bandwidth-limit    abc
+    Should Fail With Code    2    ${ENCODER}    ${input}    ${WORK}${/}out.bin    --bitrate    64000    --bandwidth-limit    1.3
+    Should Fail With Code    2    ${ENCODER}    ${input}    ${WORK}${/}out.bin    --bitrate    64000    --bandwidth-limit    .5
     File Should Not Exist    ${WORK}${/}out.bin
 
 Encoder Rejects Unsupported Input
@@ -129,7 +133,22 @@ Encoder Rejects A Bitrate Out Of Range
     ${input}=    Create Signal    tone    1000
     Should Fail With Code    1    ${ENCODER}    ${input}    ${WORK}${/}out.bin    --bitrate    7999
     Should Fail With Code    1    ${ENCODER}    ${input}    ${WORK}${/}out.bin    --bitrate    512001
+    Should Fail With Code    1    ${ENCODER}    ${input}    ${WORK}${/}out.bin    --bitrate    64000    --bandwidth-limit    0
+    Should Fail With Code    1    ${ENCODER}    ${input}    ${WORK}${/}out.bin    --bitrate    64000    --bandwidth-limit    8.125
     File Should Not Exist    ${WORK}${/}out.bin
+
+The Bandwidth Limit Is 1 Bit By Default
+    ${input}=    Create Signal    mixture    ${ONE_SECOND}
+    ${default}=    Encode    ${input}    32000    default.bin
+    ${one_bit}=    Set Variable    ${WORK}${/}one_bit.bin
+    ${earlier}=    Set Variable    ${WORK}${/}earlier.bin
+    Run Successfully    ${ENCODER}    ${input}    ${one_bit}    --bitrate    32000    --bandwidth-limit    1.0
+    Run Successfully    ${ENCODER}    ${input}    ${earlier}    --bitrate    32000    --bandwidth-limit    1.75
+    ${default_bytes}=    Get Binary File    ${default}
+    ${one_bit_bytes}=    Get Binary File    ${one_bit}
+    ${earlier_bytes}=    Get Binary File    ${earlier}
+    Should Be Equal    ${default_bytes}    ${one_bit_bytes}
+    Should Not Be Equal    ${default_bytes}    ${earlier_bytes}
 
 Encoder Rejects Files It Cannot Read
     Should Fail With Code    1    ${ENCODER}    ${WORK}${/}missing.wav    ${WORK}${/}out.bin    --bitrate    64000
@@ -154,6 +173,7 @@ Analysis Describes The Same Bitstream As The Encoder
     10000    16000    on
     10000    64000    on
     10000    64000    off
+    10000    32000    on    1.75
 
 Analysis Shows Less Audible Noise With The Model
     ${input}=    Create Signal    mixture    ${ONE_SECOND}
@@ -211,7 +231,8 @@ Prepare The Tools And A Working Directory
     Set Suite Variable    ${ENCODER}    ${encoder}
     Set Suite Variable    ${DECODER}    ${decoder}
     Set Suite Variable    ${ANALYZER}    ${analyzer}
-    Set Suite Variable    ${WORK}    ${TEMPDIR}${/}audio_codec_lab_e2e
+    # Inside the output folder of this run, so that two runs at the same time cannot disturb each other.
+    Set Suite Variable    ${WORK}    ${OUTPUT DIR}${/}e2e_work
     Remove Directory    ${WORK}    recursive=True
     Create Directory    ${WORK}
 
@@ -267,17 +288,19 @@ Stream Should Fit The Bitrate
     Should Be True    ${size} <= ${allowed}    ${size} bytes are more than the ${allowed} allowed.
 
 Analyze
-    [Arguments]    ${input}    ${bitrate}    ${psy}
+    [Arguments]    ${input}    ${bitrate}    ${psy}    ${limit}=1
     ${table}=    Set Variable    ${WORK}${/}analysis_${psy}.csv
     Run Successfully    ${ANALYZER}    ${input}    ${table}    --bitrate    ${bitrate}    --psy    ${psy}
+    ...    --bandwidth-limit    ${limit}
     RETURN    ${table}
 
 Analysis Should Agree With Encoder
-    [Arguments]    ${samples}    ${bitrate}    ${psy}
+    [Arguments]    ${samples}    ${bitrate}    ${psy}    ${limit}=1
     ${input}=    Create Signal    mixture    ${samples}
-    ${table}=    Analyze    ${input}    ${bitrate}    ${psy}
+    ${table}=    Analyze    ${input}    ${bitrate}    ${psy}    ${limit}
     ${stream}=    Set Variable    ${WORK}${/}analyzed.bin
     Run Successfully    ${ENCODER}    ${input}    ${stream}    --bitrate    ${bitrate}    --psy    ${psy}
+    ...    --bandwidth-limit    ${limit}
     Analysis Should Describe Stream    ${table}    ${stream}    ${samples}
 
 Encoder Should Reject

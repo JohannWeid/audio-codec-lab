@@ -677,6 +677,9 @@ class WithRealTools(unittest.TestCase):
         self.assertLess(energy_above("anchor35", 4000), 1e-5)
         self.assertLess(energy_above("anchor70", 7500), 1e-5)
         self.assertGreater(energy_above("reference", 7500), 0.1)
+        # The earlier limit ends at 7.6 kHz at 32 kbit/s, the present one at 15.4 kHz.
+        self.assertLess(energy_above("model_32k_old_limit", 8000), 1e-4)
+        self.assertGreater(energy_above("model_32k", 8000), 0.01)
 
         def snr(name: str) -> float:
             return metrics.snr_db(reference, metrics.read_wav(folder / f"{name}.wav"))

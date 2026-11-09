@@ -2,7 +2,8 @@
 
 A MUSHRA test following [ITU-R BS.1534-3](https://www.itu.int/rec/R-REC-BS.1534). It answers the main
 question of this project: does the codec with its masking model sound better than the same codec with
-flat noise at the same bitrate?
+flat noise at the same bitrate? It also tests a design choice, the bandwidth limit of the model at
+32 kbit/s, which so far rests on ViSQOL and one informal comparison by ear.
 
 **Status: prepared, not yet carried out.** The whole path has been run once with test listeners who were
 driven by a script: stimuli, webMUSHRA on PHP 8.5, saved results and their analysis. No real listener has
@@ -10,7 +11,7 @@ taken this test, so there are no results to report.
 
 ## Design
 
-Each trial compares up to eight signals with the original. webMUSHRA shows them under neutral names in
+Each trial compares nine signals with the original. webMUSHRA shows them under neutral names in
 random order, and the trials are in random order as well.
 
 | Condition | Meaning |
@@ -18,6 +19,7 @@ random order, and the trials are in random order as well.
 | `reference` | The original, hidden among the others. webMUSHRA adds it by itself. |
 | `anchor35`, `anchor70` | Low-pass filtered at 3.5 and 7 kHz, the two anchors of BS.1534 |
 | `model_32k`, `model_64k` | This codec with the masking model |
+| `model_32k_old_limit` | The same at 32 kbit/s, with the earlier bandwidth limit of 1.75 bits per coefficient, which ends at 7.6 kHz instead of 15.4 kHz |
 | `baseline_32k`, `baseline_64k` | This codec with flat noise, at the same bitrates |
 | `opus_64k` | Opus in hard CBR, as a known point of comparison |
 
@@ -119,7 +121,8 @@ BS.1534-3:
 - **Means and medians.** The 95 % intervals come from bootstrapping, because a small sample may not be
   normally distributed. Over all items, the mean per listener is the unit, since several ratings by one
   person are not independent.
-- **Model against baseline.** The difference per listener at the same bitrate, with a test of
+- **Comparisons.** The model against the baseline at 32 and 64 kbit/s, and the present bandwidth limit
+  against the earlier one at 32 kbit/s. The difference per listener at the same bitrate, with a test of
   randomization: exact for up to 16 listeners, from 10000 random assignments above that.
 
 To test the scripts:
